@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.venv/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+.env.local
+living-adr.config.yaml
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.coverage
+htmlcov/
+.mypy_cache/
+.DS_Store
