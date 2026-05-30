@@ -35,12 +35,17 @@ from living_adr.core.structural_change import (
     ObservedOperation,
     ReasonCode,
     StructuralChange,
+    build_no_adr_outcome_id,
     build_structural_change_id,
 )
 
 DEFAULT_DRAFT_THRESHOLD = 0.70
 CLASSIFIER_NAME = "dependency-change"
 CLASSIFIER_VERSION = "1.0.0"
+
+# Confidence assigned to suppressed (no-ADR) signals.
+_LOCKFILE_ONLY_CONFIDENCE = 0.30
+_MALFORMED_CONFIDENCE = 0.40
 
 # Confidence assigned to a determinable manifest-backed operation.
 _OPERATION_CONFIDENCE: dict[ChangeOperation, float] = {
@@ -119,7 +124,38 @@ class DependencyChangeClassifier:
             groups[item.match.ecosystem].append(item)
 
         changes: list[StructuralChange] = []
+        outcomes: list[NoAdrOutcome] = []
         source_scm_event_id = candidate.normalized_pr_key
+
+        def _outcome(
+            ecosystem_files: list[RecognizedDependencyFile],
+            reason_code: str,
+            confidence: float,
+        ) -> NoAdrOutcome:
+            source_paths = tuple(sorted(f.source_path for f in ecosystem_files))
+            evidence_ids = tuple(
+                evidence_by_path[path].id
+                for path in source_paths
+                if path in evidence_by_path
+            )
+            return NoAdrOutcome(
+                id=build_no_adr_outcome_id(
+                    repository=candidate.repository,
+                    source_scm_event_id=source_scm_event_id,
+                    change_type=ChangeType.DEPENDENCY,
+                    reason_code=reason_code,
+                    source_paths=source_paths,
+                ),
+                repository=candidate.repository,
+                source_scm_event_id=source_scm_event_id,
+                provider_delivery_id=candidate.source_delivery_id,
+                normalized_pr_key=candidate.normalized_pr_key,
+                change_type=ChangeType.DEPENDENCY,
+                reason_code=reason_code,
+                confidence=confidence,
+                source_paths=source_paths,
+                evidence_ids=evidence_ids,
+            )
 
         for ecosystem in sorted(groups, key=lambda e: e.value):
             files = groups[ecosystem]
@@ -133,15 +169,29 @@ class DependencyChangeClassifier:
                 for f in files
             )
             if not manifests:
-                # Lockfile-only churn is handled as a no-ADR outcome in S-004.
+                # Lockfile-only / transitive-only churn: suppressed (FM-03).
+                outcomes.append(
+                    _outcome(files, ReasonCode.LOCKFILE_ONLY, _LOCKFILE_ONLY_CONFIDENCE)
+                )
                 continue
 
             operation = _aggregate_operation(manifests)
             if operation is None:
+                # Recognized manifest but no inferable operation: uncertain.
+                outcomes.append(
+                    _outcome(
+                        files,
+                        ReasonCode.MALFORMED_EVIDENCE,
+                        _MALFORMED_CONFIDENCE,
+                    )
+                )
                 continue
 
             confidence = _OPERATION_CONFIDENCE[operation]
             if confidence < self.draft_threshold:
+                outcomes.append(
+                    _outcome(files, ReasonCode.LOW_CONFIDENCE, confidence)
+                )
                 continue
 
             source_paths = tuple(sorted(f.source_path for f in files))
@@ -179,9 +229,10 @@ class DependencyChangeClassifier:
             )
 
         changes.sort(key=lambda c: (c.dependency_ecosystem or "", c.id))
+        outcomes.sort(key=lambda o: (o.reason_code, o.id))
         return DependencyClassificationResult(
             changes=tuple(changes),
-            no_adr_outcomes=(),
+            no_adr_outcomes=tuple(outcomes),
             evidence=evidence,
             diagnostics=(),
         )

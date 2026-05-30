@@ -172,6 +172,25 @@ def compute_evidence_hash(
     )
 
 
+def build_no_adr_outcome_id(
+    *,
+    repository: RepositoryIdentity,
+    source_scm_event_id: str,
+    change_type: ChangeType,
+    reason_code: str,
+    source_paths: tuple[str, ...],
+) -> str:
+    """Deterministic no-ADR outcome id from repository/event/reason/paths."""
+
+    return _digest(
+        repository.key,
+        source_scm_event_id,
+        change_type.value,
+        reason_code,
+        ":".join(sorted(source_paths)),
+    )
+
+
 class ChangeEvidence(BaseModel):
     """Immutable evidence record produced from Feature 003 candidate evidence.
 
@@ -261,6 +280,7 @@ __all__ = [
     "ReasonCode",
     "build_structural_change_id",
     "build_evidence_id",
+    "build_no_adr_outcome_id",
     "compute_evidence_hash",
     "ChangeEvidence",
     "StructuralChange",
