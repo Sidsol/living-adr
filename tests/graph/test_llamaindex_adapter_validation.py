@@ -28,6 +28,7 @@ from living_adr.core.repository import RepositoryIdentity
 from living_adr.graph import GraphPersistenceConfig, LlamaIndexPropertyGraphAdapter
 from living_adr.graph.llamaindex_mapping import (
     ADR_ID_KEY,
+    NODE_KIND_KEY,
     SCOPE_KEY_PROP,
     MappingValidationError,
     adr_to_entity_node,
@@ -49,6 +50,7 @@ from living_adr.graph.provenance import (
     scope_key,
 )
 from living_adr.graph.schema import (
+    ADAPTER_NAME,
     ADAPTER_SCHEMA_VERSION,
     SchemaMetadataError,
     UnsupportedEntityLabelError,
@@ -278,3 +280,103 @@ def test_unsupported_extracted_triple_is_quarantined() -> None:
         validate_extracted_triple("adr", "addresses_component", "not-a-label")
     # A fully valid triple maps cleanly.
     validate_extracted_triple("adr", "addresses_component", "component")
+
+
+# ------------------------------------------------ slice 7: drift diagnostics
+
+
+def _wdecision(repository: RepositoryIdentity) -> ApprovedReviewDecision:
+    return ApprovedReviewDecision(
+        repository=repository,
+        decision_id="decision-x",
+        reviewer_id="lead-1",
+        adr_draft_id="draft-1",
+        adr_draft_content_hash=_HASH,
+        target_fingerprint="fp",
+        minted_at=datetime.now(UTC),
+    )
+
+
+def test_check_conformance_passes_for_clean_graph(tmp_path: Path) -> None:
+    adapter = LlamaIndexPropertyGraphAdapter(config=_config(tmp_path))
+    repo = _repo()
+    adapter.initialize_repository(repo)
+    a1 = adapter.upsert_adr_node(repo, _adr(repo, "adr-1"), _wdecision(repo))
+    a2 = adapter.upsert_adr_node(repo, _adr(repo, "adr-2"), _wdecision(repo))
+    adapter.add_relationship(
+        repo, a2, a1, RelationshipType.SUPERSEDES, _wdecision(repo)
+    )
+    report = adapter.check_conformance(repo)
+    assert report.adapter_name == ADAPTER_NAME
+    assert report.repository == repo
+    assert report.ok is True
+    assert report.violations == ()
+
+
+def test_check_conformance_reports_missing_metadata(tmp_path: Path) -> None:
+    adapter = LlamaIndexPropertyGraphAdapter(config=_config(tmp_path))
+    report = adapter.check_conformance(_repo())
+    assert report.ok is False
+    assert any("missing_schema_metadata" in v for v in report.violations)
+
+
+def test_check_conformance_reports_orphan_and_missing_provenance(
+    tmp_path: Path,
+) -> None:
+    adapter = LlamaIndexPropertyGraphAdapter(config=_config(tmp_path))
+    repo = _repo()
+    adapter.initialize_repository(repo)
+    a1 = adapter.upsert_adr_node(repo, _adr(repo, "adr-1"), _wdecision(repo))
+    ghost = NodeId(repository=repo, value="component:ghost")
+    adapter.add_relationship(
+        repo, a1, ghost, RelationshipType.ADDRESSES_COMPONENT, _wdecision(repo)
+    )
+    report = adapter.check_conformance(repo)
+    assert report.ok is False
+    assert any(v.startswith("orphan_edge") for v in report.violations)
+    assert any(v.startswith("missing_provenance") for v in report.violations)
+
+
+def test_check_conformance_reports_unsupported_schema_version(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    repo = _repo()
+    LlamaIndexPropertyGraphAdapter(config=config).initialize_repository(repo)
+    meta_path = graph_meta_path(config, repo)
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["schema_version"] = {"major": 9, "minor": 9}
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    # Fresh adapter so no cached metadata is served from the prior instance.
+    report = LlamaIndexPropertyGraphAdapter(config=config).check_conformance(repo)
+    assert report.ok is False
+    assert any("unsupported_schema_version" in v for v in report.violations)
+
+
+def test_check_conformance_reports_repository_mismatch(tmp_path: Path) -> None:
+    from llama_index.core.graph_stores.types import EntityNode
+
+    adapter = LlamaIndexPropertyGraphAdapter(config=_config(tmp_path))
+    repo = _repo()
+    adapter.initialize_repository(repo)
+    adapter.upsert_adr_node(repo, _adr(repo, "adr-1"), _wdecision(repo))
+    # Inject a fully-provenanced node that belongs to a *different* repository.
+    other = _repo(repo="beta", repo_id="999")
+    foreign_prov = EntityProvenance(
+        repository=other,
+        source_adr_id="adr-x",
+        decision_id="decision-x",
+        extraction_method=ExtractionMethod.DETERMINISTIC_ADR_PROJECTION,
+        extracted_at=datetime.now(UTC),
+        schema_version=ADAPTER_SCHEMA_VERSION,
+    )
+    props = provenance_to_properties(foreign_prov)
+    props[NODE_KIND_KEY] = "adr"
+    props[SCOPE_KEY_PROP] = scope_key(other)
+    props[ADR_ID_KEY] = "adr-x"
+    store = adapter._open_store(repo)
+    store.upsert_nodes([EntityNode(label="adr", name="adr:adr-x", properties=props)])
+    adapter._persist_store(repo)
+    report = adapter.check_conformance(repo)
+    assert report.ok is False
+    assert any(v.startswith("repository_mismatch") for v in report.violations)

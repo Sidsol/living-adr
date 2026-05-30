@@ -26,6 +26,7 @@ from living_adr.core.approval import ApprovedReviewDecision
 from living_adr.core.graph.models import (
     ADRPath,
     ADRRef,
+    ConformanceReport,
     GraphEdge,
     GraphSnapshotRef,
     MigrationResult,
@@ -58,9 +59,12 @@ from living_adr.graph.persistence import (
 )
 from living_adr.graph.provenance import (
     PROV_EVIDENCE_ID,
+    PROV_SCOPE_KEY,
     PROV_SOURCE_ADR_ID,
     EntityProvenance,
     ExtractionMethod,
+    MissingProvenanceError,
+    assert_complete,
     provenance_from_properties,
     scope_key,
 )
@@ -68,6 +72,8 @@ from living_adr.graph.schema import (
     ADAPTER_NAME,
     ADAPTER_SCHEMA_VERSION,
     ENTITY_LABEL_ADR,
+    ENTITY_LABELS,
+    RELATIONSHIP_LABELS,
     SchemaMetadataError,
     UnsupportedSchemaVersionError,
     is_supported,
@@ -637,6 +643,109 @@ class LlamaIndexPropertyGraphAdapter:
         """Return whether ``snapshot`` still matches the latest revision."""
 
         return snapshot_state(snapshot, self._current_revision(repository))
+
+    # --------------------------------------------- drift diagnostics (slice 7)
+    def check_conformance(
+        self, repository: RepositoryIdentity
+    ) -> ConformanceReport:
+        """Audit the persisted repository graph and report drift violations.
+
+        Walks the repository-scoped property graph read-only (never mutating
+        state) and collects named violations so operators / the future MCP
+        server (feature 012) can detect a graph that has drifted from its
+        contract. Categories reported:
+
+        * ``missing_schema_metadata`` — repository never initialized.
+        * ``malformed_schema_metadata`` — metadata present but unparseable.
+        * ``unsupported_schema_version:<label>`` — persisted version outside the
+          adapter's supported range (US-2: never silently read).
+        * ``missing_provenance:<id>`` — a node/edge lacks required lineage.
+        * ``unsupported_entity_label:<id>:<label>`` /
+          ``unsupported_relationship_label:<id>:<label>`` — off-schema labels.
+        * ``repository_mismatch:<id>`` — node/edge scoped to another repository.
+        * ``orphan_edge:<src>-><dst>`` — an edge endpoint has no provenanced node.
+        """
+
+        violations: list[str] = []
+        meta = self._read_meta(repository)
+        if meta is None:
+            violations.append("missing_schema_metadata")
+            return ConformanceReport(
+                repository=repository,
+                adapter_name=ADAPTER_NAME,
+                passed=False,
+                violations=tuple(violations),
+            )
+        try:
+            version = self._meta_schema_version(meta)
+        except SchemaMetadataError:
+            violations.append("malformed_schema_metadata")
+            version = None
+        if version is not None and not is_supported(version):
+            violations.append(f"unsupported_schema_version:{version.label}")
+
+        wanted_scope = scope_key(repository)
+        graph = self._open_store(repository).graph
+
+        provenanced_node_ids: set[str] = set()
+        for node in graph.get_all_nodes():
+            node_id = str(getattr(node, "id", ""))
+            props = getattr(node, "properties", {}) or {}
+            label = str(getattr(node, "label", ""))
+            clean = True
+            try:
+                assert_complete(props)
+            except MissingProvenanceError:
+                violations.append(f"missing_provenance:{node_id}")
+                clean = False
+            if not self._scope_matches(props, wanted_scope):
+                violations.append(f"repository_mismatch:{node_id}")
+                clean = False
+            if label not in ENTITY_LABELS:
+                violations.append(f"unsupported_entity_label:{node_id}:{label}")
+                clean = False
+            if clean:
+                provenanced_node_ids.add(node_id)
+
+        for relation in graph.get_all_relations():
+            props = getattr(relation, "properties", {}) or {}
+            label = str(getattr(relation, "label", ""))
+            src = str(getattr(relation, "source_id", ""))
+            dst = str(getattr(relation, "target_id", ""))
+            edge_id = f"{src}->{dst}"
+            try:
+                assert_complete(props)
+            except MissingProvenanceError:
+                violations.append(f"missing_provenance:{edge_id}")
+            if not self._scope_matches(props, wanted_scope):
+                violations.append(f"repository_mismatch:{edge_id}")
+            if label not in RELATIONSHIP_LABELS:
+                violations.append(
+                    f"unsupported_relationship_label:{edge_id}:{label}"
+                )
+            if src not in provenanced_node_ids or dst not in provenanced_node_ids:
+                violations.append(f"orphan_edge:{edge_id}")
+
+        return ConformanceReport(
+            repository=repository,
+            adapter_name=ADAPTER_NAME,
+            passed=not violations,
+            violations=tuple(violations),
+        )
+
+    @staticmethod
+    def _scope_matches(props: dict, wanted_scope: str) -> bool:
+        """Return whether ``props`` carries the expected repository scope key.
+
+        Placeholder nodes auto-created for orphan edge endpoints carry no scope
+        property; those are caught by the provenance/orphan checks, so a missing
+        scope key here is treated as *not a mismatch* to avoid double-reporting.
+        """
+
+        found = props.get(PROV_SCOPE_KEY) or props.get(SCOPE_KEY_PROP)
+        if not found:
+            return True
+        return found == wanted_scope
 
 
 __all__ = ["LlamaIndexPropertyGraphAdapter"]
