@@ -156,3 +156,12 @@ def test_detection_is_deterministic() -> None:
     )
     detector = APIContractChangeDetector()
     assert detector.detect(_input(*files)) == detector.detect(_input(*files))
+
+def test_comment_only_api_change_is_retained_no_adr() -> None:
+    outcome = _detect(
+        ChangedFileMetadata(filename="api/openapi.yaml", status="modified",
+                            additions=0, deletions=0),
+    )
+    assert outcome.changes == ()
+    (record,) = outcome.no_adr_outcomes
+    assert record.reason_code == ReasonCode.NO_PERSISTED_SHAPE_CHANGE

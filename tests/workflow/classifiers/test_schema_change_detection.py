@@ -165,3 +165,20 @@ def test_detection_is_deterministic() -> None:
     )
     detector = SchemaChangeDetector()
     assert detector.detect(_input(*files)) == detector.detect(_input(*files))
+
+def test_comment_only_schema_change_is_retained_no_adr() -> None:
+    outcome = _detect(
+        ChangedFileMetadata(filename="db/migrations/0009.sql", status="modified",
+                            additions=0, deletions=0),
+    )
+    assert outcome.changes == ()
+    (record,) = outcome.no_adr_outcomes
+    assert record.reason_code == ReasonCode.NO_PERSISTED_SHAPE_CHANGE
+
+
+def test_ambiguous_extensionless_schema_file_is_ignored() -> None:
+    outcome = _detect(
+        ChangedFileMetadata(filename="docs/schema-notes", status="modified",
+                            additions=3, deletions=1),
+    )
+    assert outcome.changes == ()

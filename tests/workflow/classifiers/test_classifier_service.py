@@ -150,3 +150,91 @@ def test_produce_is_deterministic() -> None:
     )
     service = SchemaApiContractClassifier()
     assert service.produce(candidate) == service.produce(candidate)
+
+_ALLOWED_COMPLETED_KEYS = {
+    "repository_key",
+    "normalized_pr_key",
+    "policy_id",
+    "change_count",
+    "draft_count",
+    "no_adr_count",
+    "evidence_count",
+    "change_types",
+    "reason_codes",
+    "uncertainty_reasons",
+    "max_confidence",
+}
+
+
+def _candidate_with_secret(*files: ChangedFileMetadata) -> CandidateEvidence:
+    return CandidateEvidence(
+        repository=REPO,
+        source_delivery_id="d-1",
+        normalized_pr_key="github:github.com/acme/widgets:42:mergesha",
+        pr_number=42,
+        pr_title="Change",
+        changed_files=files,
+        diff=DiffEvidence(
+            diff_handle="github:pulls/42/files",
+            summary="SECRET_TOKEN_abcdef123 leaked in raw diff body",
+        ),
+        provider=SCMProviderName.GITHUB,
+    )
+
+
+def test_observability_metadata_excludes_raw_and_secret_content() -> None:
+    obs = _RecordingObservability()
+    SchemaApiContractClassifier(observability=obs).produce(
+        _candidate_with_secret(
+            ChangedFileMetadata(filename="db/generated/migrations/0010.sql",
+                                status="added", additions=12),
+            ChangedFileMetadata(filename="api/openapi.yaml", status="modified",
+                                additions=4, deletions=1),
+        )
+    )
+    blob = repr(obs.events)
+    # No raw diff body, secret, or diff handle leaks into any event metadata.
+    assert "SECRET_TOKEN" not in blob
+    assert "raw diff" not in blob
+    assert "diff_handle" not in blob
+    assert "github:pulls/42/files" not in blob
+    completed = next(m for n, m in obs.events if n.endswith(".completed"))
+    assert set(completed) <= _ALLOWED_COMPLETED_KEYS
+    # Uncertainty surfaced as metadata tokens (generated artifact).
+    assert "generated_artifact" in completed["uncertainty_reasons"]
+
+
+def test_fixture_matrix_direct_generated_mixed_and_no_change() -> None:
+    result = SchemaApiContractClassifier().produce(
+        _candidate(
+            # direct schema
+            ChangedFileMetadata(filename="db/migrations/0007.sql", status="added",
+                                additions=20),
+            # direct api
+            ChangedFileMetadata(filename="proto/user.proto", status="modified",
+                                additions=6, deletions=2),
+            # generated api (uncertain)
+            ChangedFileMetadata(filename="api/generated/openapi.json",
+                                status="modified", additions=10, deletions=3),
+            # dynamic api route (retained, below threshold)
+            ChangedFileMetadata(filename="app/api/dynamic_routes.py",
+                                status="modified", additions=3, deletions=1),
+            # no-change noise
+            ChangedFileMetadata(filename="README.md", status="modified",
+                                additions=1),
+        )
+    )
+    # Schema and API stay distinct; nothing collapses into a generic bucket.
+    schema_changes = [c for c in result.changes
+                      if c.change_type is ChangeType.SCHEMA]
+    api_changes = [c for c in result.changes
+                   if c.change_type is ChangeType.API_CONTRACT]
+    assert len(schema_changes) == 1
+    assert len(api_changes) >= 1
+    # Low-confidence dynamic route retained, never dropped.
+    assert any(o.change_type is ChangeType.API_CONTRACT
+               for o in result.no_adr_outcomes)
+    # Every change links to emitted evidence.
+    evidence_ids = {e.id for e in result.evidence}
+    for change in result.changes:
+        assert set(change.evidence_ids) <= evidence_ids
