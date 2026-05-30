@@ -16,6 +16,13 @@ import graph free of workflow/graph cycles.
 
 from __future__ import annotations
 
+from living_adr.approval.audit_queries import (
+    DecisionAuditTrail,
+    DecisionMutationLink,
+    audit_timeline,
+    build_decision_audit_trail,
+    decision_mutation_links,
+)
 from living_adr.approval.hashing import (
     canonical_adr_hash,
     canonicalize_adr_content,
@@ -89,4 +96,9 @@ __all__ = [
     "validate_for_mutation",
     "DurableApprovalBoundMutationService",
     "AuthorizedMutationResult",
+    "DecisionAuditTrail",
+    "DecisionMutationLink",
+    "build_decision_audit_trail",
+    "decision_mutation_links",
+    "audit_timeline",
 ]

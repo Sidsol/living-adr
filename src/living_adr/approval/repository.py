@@ -63,6 +63,10 @@ class ApprovalAuditRepository(Protocol):
 
     def get_consumption(self, decision_id: str) -> ConsumptionRecord | None: ...
 
+    def list_consumptions(
+        self, repository_key: str | None = None
+    ) -> tuple[ConsumptionRecord, ...]: ...
+
     # audit trail -----------------------------------------------------------
     def record_audit_event(self, event: AuditEvent) -> AuditEvent: ...
 
@@ -71,6 +75,10 @@ class ApprovalAuditRepository(Protocol):
         decision_id: str | None = None,
         repository_key: str | None = None,
     ) -> tuple[AuditEvent, ...]: ...
+
+    def find_review_event_for_decision(
+        self, decision_id: str
+    ) -> ApprovalEvent | None: ...
 
 
 class _ConsumptionConflict(DecisionAlreadyConsumedError):
@@ -143,6 +151,14 @@ class InMemoryApprovalAuditRepository:
     def get_consumption(self, decision_id: str) -> ConsumptionRecord | None:
         return self._consumptions.get(decision_id)
 
+    def list_consumptions(
+        self, repository_key: str | None = None
+    ) -> tuple[ConsumptionRecord, ...]:
+        items = self._consumptions.values()
+        if repository_key is not None:
+            items = [c for c in items if c.repository_key == repository_key]
+        return tuple(items)
+
     # audit trail -----------------------------------------------------------
     def record_audit_event(self, event: AuditEvent) -> AuditEvent:
         self._audit.append(event)
@@ -159,6 +175,14 @@ class InMemoryApprovalAuditRepository:
         if repository_key is not None:
             events = [e for e in events if e.repository_key == repository_key]
         return tuple(events)
+
+    def find_review_event_for_decision(
+        self, decision_id: str
+    ) -> ApprovalEvent | None:
+        for event in self._review_events.values():
+            if event.decision_id == decision_id:
+                return event
+        return None
 
 
 class SqliteApprovalAuditRepository:
@@ -331,6 +355,20 @@ class SqliteApprovalAuditRepository:
             return None
         return ConsumptionRecord.model_validate_json(row["record_json"])
 
+    def list_consumptions(
+        self, repository_key: str | None = None
+    ) -> tuple[ConsumptionRecord, ...]:
+        cur = self._conn.execute(
+            "SELECT record_json FROM approval_consumptions ORDER BY rowid"
+        )
+        records = (
+            ConsumptionRecord.model_validate_json(row["record_json"])
+            for row in cur.fetchall()
+        )
+        if repository_key is not None:
+            return tuple(c for c in records if c.repository_key == repository_key)
+        return tuple(records)
+
     # audit trail -----------------------------------------------------------
     def record_audit_event(self, event: AuditEvent) -> AuditEvent:
         self._conn.execute(
@@ -369,6 +407,14 @@ class SqliteApprovalAuditRepository:
             AuditEvent.model_validate_json(row["event_json"])
             for row in cur.fetchall()
         )
+
+    def find_review_event_for_decision(
+        self, decision_id: str
+    ) -> ApprovalEvent | None:
+        for event in self.list_review_events():
+            if event.decision_id == decision_id:
+                return event
+        return None
 
 
 def audit_event_types(
