@@ -23,3 +23,6 @@ living-adr.config.yaml
 htmlcov/
 .mypy_cache/
 .DS_Store
+
+# Runtime graph persistence (feature 007)
+var/
