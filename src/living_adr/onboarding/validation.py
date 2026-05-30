@@ -18,6 +18,7 @@ injected verifier; config changes never trigger a reload here (architecture
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from typing import Protocol, runtime_checkable
 
 from living_adr.core.config import LivingADRConfig, RepositoryConfig
 from living_adr.core.config_loader import (
@@ -25,6 +26,8 @@ from living_adr.core.config_loader import (
     load_living_adr_config,
 )
 from living_adr.core.observability import NoOpObservability, Observability
+from living_adr.core.repository import RepositoryIdentity
+from living_adr.core.scm import InstallationVerification, SCMProviderError
 from living_adr.onboarding.diagnostics import (
     DiagnosticCategory,
     DiagnosticSeverity,
@@ -32,9 +35,22 @@ from living_adr.onboarding.diagnostics import (
     OnboardingValidationResult,
     safe_result_metadata,
 )
+from living_adr.onboarding.github_checks import (
+    installation_diagnostics,
+    required_permissions,
+)
 from living_adr.onboarding.required_env import REQUIRED_ENV_VARS
 
 ConfigLoader = Callable[..., LivingADRConfig]
+
+
+@runtime_checkable
+class InstallationVerifier(Protocol):
+    """Seam for GitHub App installation verification (feature 003 provider)."""
+
+    def verify_installation(
+        self, repository: RepositoryIdentity, installation_id: str
+    ) -> InstallationVerification: ...
 
 _RESTART_MESSAGE = (
     "Configuration is read once at startup. After changing config or "
@@ -52,11 +68,13 @@ class OnboardingValidator:
         config_loader: ConfigLoader = load_living_adr_config,
         env: Mapping[str, str] | None = None,
         config_path: object | None = None,
+        installation_verifier: InstallationVerifier | None = None,
         observability: Observability | None = None,
     ) -> None:
         self._config_loader = config_loader
         self._env: Mapping[str, str] = env if env is not None else {}
         self._config_path = config_path
+        self._verifier = installation_verifier
         self._obs: Observability = observability or NoOpObservability()
 
     def validate(self) -> OnboardingValidationResult:
@@ -65,9 +83,9 @@ class OnboardingValidator:
 
         config = self._check_config(diagnostics, metadata)
         self._check_environment(diagnostics)
+        if config is not None:
+            self._check_github(config, diagnostics, metadata)
         self._add_lifecycle(diagnostics)
-        # ``config`` is consumed by GitHub installation verification (slice 3).
-        del config
 
         result = OnboardingValidationResult.from_diagnostics(
             diagnostics, metadata=safe_result_metadata(metadata)
@@ -146,6 +164,63 @@ class OnboardingValidator:
         metadata["default_branch"] = repo.default_branch
         metadata["publication_policy"] = repo.adr_publication_policy.value
         metadata["installation_id"] = repo.github_app_installation_id
+
+    # -- github app -----------------------------------------------------------
+
+    def _check_github(
+        self,
+        config: LivingADRConfig,
+        diagnostics: list[OnboardingDiagnostic],
+        metadata: dict[str, object],
+    ) -> None:
+        first = config.repositories[0]
+        metadata["required_permissions"] = ",".join(
+            required_permissions(first.adr_publication_policy)
+        )
+
+        if self._verifier is None:
+            diagnostics.append(
+                OnboardingDiagnostic(
+                    category=DiagnosticCategory.GITHUB_APP,
+                    severity=DiagnosticSeverity.WARNING,
+                    message=(
+                        "Live GitHub App installation verification was skipped "
+                        "(no GitHub credentials/provider configured); install "
+                        "and permission status were not confirmed."
+                    ),
+                    remediation=(
+                        "Provide GitHub App credentials so onboarding can verify "
+                        "installation and permissions."
+                    ),
+                )
+            )
+            return
+
+        for repo in config.repositories:
+            try:
+                verification = self._verifier.verify_installation(
+                    repo.identity, repo.github_app_installation_id
+                )
+            except SCMProviderError:
+                # Never surface raw provider error text — it may embed details.
+                diagnostics.append(
+                    OnboardingDiagnostic(
+                        category=DiagnosticCategory.GITHUB_APP,
+                        severity=DiagnosticSeverity.BLOCKING,
+                        message=(
+                            "GitHub App installation verification failed for "
+                            f"{repo.canonical_key} (installation "
+                            f"{repo.github_app_installation_id})."
+                        ),
+                        remediation=(
+                            "Check GitHub App credentials and repository access, "
+                            "then re-run onboarding validation."
+                        ),
+                        repository_key=repo.canonical_key,
+                    )
+                )
+                continue
+            diagnostics.extend(installation_diagnostics(repo, verification))
 
     # -- environment ----------------------------------------------------------
 

@@ -123,6 +123,46 @@ class DiffEvidence(BaseModel):
     byte_size: int | None = None
 
 
+class InstallationStatus(StrEnum):
+    """Outcome of verifying a GitHub App installation for a repository (014).
+
+    Provider-neutral so onboarding diagnostics never depend on raw GitHub HTTP
+    status codes. The GitHub adapter maps API results into these values.
+    """
+
+    INSTALLED = "installed"
+    NOT_INSTALLED = "not_installed"
+    SUSPENDED = "suspended"
+    MISMATCHED = "mismatched"
+    ACCESS_DENIED = "access_denied"
+    RATE_LIMITED = "rate_limited"
+    ERROR = "error"
+
+
+class InstallationVerification(BaseModel):
+    """Safe result of an installation check: status + non-secret metadata only.
+
+    Carries no tokens or private key material — only the repository key, the
+    expected/actual installation ids, repo id, default branch, and the granted
+    permission map (e.g. ``{"contents": "read"}``) needed for onboarding
+    diagnostics (architecture #cross-cutting, FM-21).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository_key: str
+    expected_installation_id: str
+    status: InstallationStatus
+    installation_id: str | None = None
+    repo_id: str | None = None
+    default_branch: str | None = None
+    permissions: Mapping[str, str] = {}
+
+    @property
+    def is_installed(self) -> bool:
+        return self.status is InstallationStatus.INSTALLED
+
+
 class CandidateEvidence(BaseModel):
     """Immutable evidence bundle for classifiers, linked to the source event.
 
@@ -198,6 +238,8 @@ __all__ = [
     "PullRequestMetadata",
     "ChangedFileMetadata",
     "DiffEvidence",
+    "InstallationStatus",
+    "InstallationVerification",
     "CandidateEvidence",
     "SCMProvider",
     "SCMProviderError",

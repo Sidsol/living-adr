@@ -18,6 +18,8 @@ from living_adr.core.repository import RepositoryIdentity
 from living_adr.core.scm import (
     ChangedFileMetadata,
     DiffEvidence,
+    InstallationStatus,
+    InstallationVerification,
     ProviderPermissionError,
     PullRequestMetadata,
     RateLimitError,
@@ -140,6 +142,104 @@ class GitHubProvider:
             summary=summary,
             truncated=False,
             byte_size=byte_size,
+        )
+
+    @staticmethod
+    def _installation_path(repository: RepositoryIdentity) -> str:
+        return f"/repos/{repository.owner}/{repository.repo}/installation"
+
+    @staticmethod
+    def _repo_path(repository: RepositoryIdentity) -> str:
+        return f"/repos/{repository.owner}/{repository.repo}"
+
+    def verify_installation(
+        self, repository: RepositoryIdentity, installation_id: str
+    ) -> InstallationVerification:
+        """Verify the GitHub App installation for ``repository`` (feature 014).
+
+        Returns a safe :class:`InstallationVerification` (no tokens/keys). All
+        GitHub HTTP details are mapped to provider-neutral statuses here so
+        onboarding diagnostics never see raw API codes (FM-24). Only the
+        installation endpoint plus a single repo-metadata read are called — no
+        broad history/contents mining (FM-18).
+        """
+
+        key = repository.key
+        try:
+            raw = self._client.get_json(self._installation_path(repository))
+        except GitHubApiError as exc:
+            return InstallationVerification(
+                repository_key=key,
+                expected_installation_id=installation_id,
+                status=self._status_for_api_error(exc),
+            )
+
+        if not isinstance(raw, Mapping):
+            return InstallationVerification(
+                repository_key=key,
+                expected_installation_id=installation_id,
+                status=InstallationStatus.ERROR,
+            )
+
+        actual_id = raw.get("id")
+        actual_id_str = str(actual_id) if actual_id is not None else None
+        permissions = self._coerce_permissions(raw.get("permissions"))
+        suspended = raw.get("suspended_at") is not None
+
+        if suspended:
+            status = InstallationStatus.SUSPENDED
+        elif actual_id_str is None:
+            status = InstallationStatus.ERROR
+        elif actual_id_str != installation_id:
+            status = InstallationStatus.MISMATCHED
+        else:
+            status = InstallationStatus.INSTALLED
+
+        repo_id: str | None = None
+        default_branch: str | None = None
+        if status is InstallationStatus.INSTALLED:
+            repo_id, default_branch = self._fetch_repo_metadata(repository)
+
+        return InstallationVerification(
+            repository_key=key,
+            expected_installation_id=installation_id,
+            installation_id=actual_id_str,
+            repo_id=repo_id,
+            default_branch=default_branch,
+            permissions=permissions,
+            status=status,
+        )
+
+    @staticmethod
+    def _status_for_api_error(error: GitHubApiError) -> InstallationStatus:
+        if error.status == 404:
+            return InstallationStatus.NOT_INSTALLED
+        if error.status == 429 or (error.status == 403 and error.rate_limited):
+            return InstallationStatus.RATE_LIMITED
+        if error.status == 403:
+            return InstallationStatus.ACCESS_DENIED
+        return InstallationStatus.ERROR
+
+    @staticmethod
+    def _coerce_permissions(value: object) -> dict[str, str]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(k): str(v) for k, v in value.items()}
+
+    def _fetch_repo_metadata(
+        self, repository: RepositoryIdentity
+    ) -> tuple[str | None, str | None]:
+        try:
+            data = self._client.get_json(self._repo_path(repository))
+        except GitHubApiError:
+            return None, None
+        if not isinstance(data, Mapping):
+            return None, None
+        repo_id = data.get("id")
+        default_branch = data.get("default_branch")
+        return (
+            str(repo_id) if repo_id is not None else None,
+            str(default_branch) if default_branch is not None else None,
         )
 
 
