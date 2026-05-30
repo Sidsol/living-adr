@@ -10,6 +10,11 @@ from living_adr.core.config import (
     PublicationPolicy,
     RepositoryConfig,
 )
+from living_adr.core.observability import (
+    NoOpObservability,
+    Observability,
+    ObservationSpan,
+)
 from living_adr.core.repository import RepositoryIdentity
 
 __all__ = [
@@ -17,4 +22,7 @@ __all__ = [
     "RepositoryConfig",
     "LivingADRConfig",
     "PublicationPolicy",
+    "Observability",
+    "NoOpObservability",
+    "ObservationSpan",
 ]
