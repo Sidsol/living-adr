@@ -34,3 +34,14 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "ruff>=0.15.14",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
