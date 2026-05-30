@@ -193,6 +193,16 @@ class ConfidenceAssessment:
     uncertainty: tuple[UncertaintyReason, ...] = field(default_factory=tuple)
 
 
+class DetectorOutcome(BaseModel):
+    """Typed bundle a single detector returns: changes, no-ADR, and evidence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    changes: tuple[StructuralChange, ...] = ()
+    no_adr_outcomes: tuple[NoAdrOutcome, ...] = ()
+    evidence: tuple[ChangeEvidence, ...] = ()
+
+
 CLASSIFIER_NAME = "schema-api-contract-change-detection"
 CLASSIFIER_VERSION = "1.0.0"
 
@@ -344,6 +354,7 @@ __all__ = [
     "build_classifier_input",
     "Detection",
     "ConfidenceAssessment",
+    "DetectorOutcome",
     "CLASSIFIER_NAME",
     "CLASSIFIER_VERSION",
     "make_evidence",
