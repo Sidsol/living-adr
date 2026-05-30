@@ -23,11 +23,12 @@ from living_adr.core.ingestion import (
     IngestionDelivery,
     IngestionErrorCategory,
 )
+from living_adr.core.scm import CandidateEvidence
 
 
 @runtime_checkable
 class IngestionStore(Protocol):
-    """Provider-neutral persistence port for ingestion delivery state."""
+    """Provider-neutral persistence port for ingestion delivery + evidence."""
 
     def get_delivery(self, delivery_id: str) -> IngestionDelivery | None: ...
 
@@ -35,12 +36,17 @@ class IngestionStore(Protocol):
 
     def list_dead_letters(self) -> tuple[IngestionDelivery, ...]: ...
 
+    def get_evidence(self, normalized_pr_key: str) -> CandidateEvidence | None: ...
+
+    def put_evidence(self, evidence: CandidateEvidence) -> CandidateEvidence: ...
+
 
 class InMemoryIngestionStore:
     """In-memory delivery store for tests and single-process PoC runs."""
 
     def __init__(self) -> None:
         self._deliveries: dict[str, IngestionDelivery] = {}
+        self._evidence: dict[str, CandidateEvidence] = {}
 
     def get_delivery(self, delivery_id: str) -> IngestionDelivery | None:
         return self._deliveries.get(delivery_id)
@@ -55,6 +61,14 @@ class InMemoryIngestionStore:
             for d in self._deliveries.values()
             if d.status is DeliveryStatus.DEAD_LETTER
         )
+
+    def get_evidence(self, normalized_pr_key: str) -> CandidateEvidence | None:
+        return self._evidence.get(normalized_pr_key)
+
+    def put_evidence(self, evidence: CandidateEvidence) -> CandidateEvidence:
+        # Immutable evidence: first write wins, idempotent on the normalized key.
+        self._evidence.setdefault(evidence.normalized_pr_key, evidence)
+        return self._evidence[evidence.normalized_pr_key]
 
 
 _DELIVERY_COLUMNS = (
@@ -92,6 +106,14 @@ class SqliteIngestionStore:
                 retry_count INTEGER NOT NULL,
                 received_at TEXT NOT NULL,
                 detail TEXT
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_evidence (
+                normalized_pr_key TEXT PRIMARY KEY,
+                evidence_json TEXT NOT NULL
             )
             """
         )
@@ -165,6 +187,29 @@ class SqliteIngestionStore:
         return tuple(
             d for d in self._all() if d.status is DeliveryStatus.DEAD_LETTER
         )
+
+    def get_evidence(self, normalized_pr_key: str) -> CandidateEvidence | None:
+        cur = self._conn.execute(
+            "SELECT evidence_json FROM ingestion_evidence "
+            "WHERE normalized_pr_key = ?",
+            (normalized_pr_key,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return CandidateEvidence.model_validate_json(row["evidence_json"])
+
+    def put_evidence(self, evidence: CandidateEvidence) -> CandidateEvidence:
+        # Immutable evidence: first write wins (INSERT OR IGNORE).
+        self._conn.execute(
+            "INSERT OR IGNORE INTO ingestion_evidence "
+            "(normalized_pr_key, evidence_json) VALUES (?, ?)",
+            (evidence.normalized_pr_key, evidence.model_dump_json()),
+        )
+        self._conn.commit()
+        stored = self.get_evidence(evidence.normalized_pr_key)
+        assert stored is not None
+        return stored
 
 
 __all__ = [
