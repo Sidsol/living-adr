@@ -51,6 +51,7 @@ from living_adr.approval.repository import (
     InMemoryApprovalAuditRepository,
     SqliteApprovalAuditRepository,
 )
+from living_adr.approval.validation import validate_decision, validate_for_mutation
 
 __all__ = [
     "DEFAULT_DECISION_TTL",
@@ -80,4 +81,6 @@ __all__ = [
     "canonical_adr_hash",
     "canonicalize_adr_content",
     "content_matches_hash",
+    "validate_decision",
+    "validate_for_mutation",
 ]
