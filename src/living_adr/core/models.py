@@ -16,11 +16,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class RepositoryIdentity(BaseModel):
-    """Stable repository key: ``host/owner/repo`` plus an opaque provider id."""
+    """Stable repository key: ``host/owner/repo`` plus an opaque provider id.
+
+    Feature 002 hardens this shared seam: every coordinate is stripped and must
+    be non-empty so the canonical key is stable across SCM, graph, MCP, and
+    observability metadata. This model carries no secrets.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -28,6 +33,14 @@ class RepositoryIdentity(BaseModel):
     owner: str
     repo: str
     repo_id: str
+
+    @field_validator("host", "owner", "repo", "repo_id")
+    @classmethod
+    def _non_empty(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be empty or whitespace")
+        return stripped
 
     @property
     def key(self) -> str:
