@@ -42,6 +42,11 @@ class ChangeType(StrEnum):
     """
 
     DEPENDENCY = "dependency"
+    # Feature 005 families. Added as new enum values only — the serialized
+    # ``change_type`` field name/shape is unchanged, so dependency records stay
+    # byte-identical with feature 004.
+    SCHEMA = "schema"
+    API_CONTRACT = "api_contract"
 
 
 class ChangeOperation(StrEnum):
@@ -51,6 +56,8 @@ class ChangeOperation(StrEnum):
     REMOVED = "removed"
     VERSION_CHANGED = "version_changed"
     MIXED = "mixed"
+    # Feature 005: schema/API edits are most often in-place modifications.
+    MODIFIED = "modified"
 
 
 class ADRRecommendation(StrEnum):
@@ -66,6 +73,20 @@ class EvidenceKind(StrEnum):
     DEPENDENCY_MANIFEST = "dependency_manifest"
     DEPENDENCY_LOCKFILE = "dependency_lockfile"
     DEPENDENCY_DIFF_SUMMARY = "dependency_diff_summary"
+    # Feature 005 schema evidence kinds.
+    SCHEMA_MIGRATION = "schema_migration"
+    SCHEMA_DDL = "schema_ddl"
+    SCHEMA_ORM_MODEL = "schema_orm_model"
+    SCHEMA_REGISTRY = "schema_registry"
+    SCHEMA_VALIDATION = "schema_validation"
+    SCHEMA_DIFF_SUMMARY = "schema_diff_summary"
+    # Feature 005 API-contract evidence kinds.
+    API_OPENAPI = "api_openapi"
+    API_GRAPHQL = "api_graphql"
+    API_PROTOBUF = "api_protobuf"
+    API_ROUTE = "api_route"
+    API_MODEL = "api_model"
+    API_DIFF_SUMMARY = "api_diff_summary"
 
 
 class ObservedOperation(StrEnum):
@@ -81,6 +102,8 @@ class ObservedOperation(StrEnum):
     VERSION_CHANGED = "version_changed"
     LOCKFILE_CHURN = "lockfile_churn"
     UNKNOWN = "unknown"
+    # Feature 005: an observed in-place modification to a schema/API file.
+    MODIFIED = "modified"
 
 
 class ReasonCode(StrEnum):
@@ -104,6 +127,26 @@ class ReasonCode(StrEnum):
     MALFORMED_EVIDENCE = "malformed_evidence"
     LOW_CONFIDENCE = "low_confidence"
     NO_DEPENDENCY_FILES = "no_dependency_files"
+    # Feature 005 schema reason codes.
+    SCHEMA_MIGRATION = "schema_migration"
+    SCHEMA_DDL = "schema_ddl"
+    SCHEMA_ORM_MODEL = "schema_orm_model"
+    SCHEMA_REGISTRY = "schema_registry"
+    SCHEMA_VALIDATION = "schema_validation"
+    SCHEMA_GENERATED_UNCERTAIN = "schema_generated_uncertain"
+    # Feature 005 API-contract reason codes.
+    API_OPENAPI_CONTRACT = "api_openapi_contract"
+    API_GRAPHQL_CONTRACT = "api_graphql_contract"
+    API_PROTOBUF_CONTRACT = "api_protobuf_contract"
+    API_ROUTE_SIGNATURE = "api_route_signature"
+    API_REQUEST_RESPONSE_MODEL = "api_request_response_model"
+    API_STATUS_ERROR = "api_status_error"
+    API_DYNAMIC_ROUTE_UNCERTAIN = "api_dynamic_route_uncertain"
+    API_GENERATED_UNCERTAIN = "api_generated_uncertain"
+    # Feature 005 shared no-ADR reason codes.
+    NO_PERSISTED_SHAPE_CHANGE = "no_persisted_shape_change"
+    INTERNAL_HANDLER_ONLY = "internal_handler_only"
+    SEED_OR_TEST_ONLY = "seed_or_test_only"
 
 
 def _digest(*parts: object) -> str:
