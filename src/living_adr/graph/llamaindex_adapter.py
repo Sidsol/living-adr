@@ -24,17 +24,26 @@ import json
 from living_adr.core.adr import ADRRecord
 from living_adr.core.approval import ApprovedReviewDecision
 from living_adr.core.graph.models import (
+    ADRPath,
+    ADRRef,
     GraphEdge,
     GraphSnapshotRef,
     MigrationResult,
     NodeId,
+    ProvenancedADR,
     RelationshipType,
     SchemaVersion,
+    WhyAnswer,
     utc_now,
 )
 from living_adr.core.models import StructuralChange
 from living_adr.core.repository import RepositoryIdentity
 from living_adr.graph.llamaindex_mapping import (
+    ADR_ID_KEY,
+    NODE_KIND_KEY,
+    SCOPE_KEY_PROP,
+    STATUS_KEY,
+    TITLE_KEY,
     adr_node_value,
     adr_to_entity_node,
     edge_to_relation,
@@ -47,13 +56,25 @@ from living_adr.graph.persistence import (
     graph_meta_path,
     property_graph_path,
 )
-from living_adr.graph.provenance import EntityProvenance, ExtractionMethod
+from living_adr.graph.provenance import (
+    PROV_EVIDENCE_ID,
+    PROV_SOURCE_ADR_ID,
+    EntityProvenance,
+    ExtractionMethod,
+    provenance_from_properties,
+    scope_key,
+)
 from living_adr.graph.schema import (
     ADAPTER_NAME,
     ADAPTER_SCHEMA_VERSION,
+    ENTITY_LABEL_ADR,
     SchemaMetadataError,
     UnsupportedSchemaVersionError,
     is_supported,
+)
+from living_adr.graph.snapshots import (
+    SnapshotState,
+    snapshot_state,
 )
 
 
@@ -426,6 +447,196 @@ class LlamaIndexPropertyGraphAdapter:
             schema_version=version,
             created_at=utc_now(),
         )
+
+    # ------------------------------------------------------ read side (slice 5)
+    def _current_revision(self, repository: RepositoryIdentity) -> int:
+        meta = self._read_meta(repository)
+        return int(meta.get("revision", 0)) if meta else 0
+
+    def _adr_nodes(self, repository: RepositoryIdentity) -> list:
+        """Return repository-scoped ADR ``EntityNode`` objects (read-only)."""
+
+        if not graph_meta_path(self._config, repository).exists():
+            return []
+        store = self._open_store(repository)
+        wanted_scope = scope_key(repository)
+        nodes = []
+        for node in store.get():
+            props = getattr(node, "properties", {}) or {}
+            if props.get(NODE_KIND_KEY) != ENTITY_LABEL_ADR:
+                continue
+            if props.get(SCOPE_KEY_PROP) != wanted_scope:
+                continue  # defence-in-depth scope filter
+            nodes.append(node)
+        return nodes
+
+    def _node_to_ref(
+        self, repository: RepositoryIdentity, node: object
+    ) -> ADRRef:
+        props = getattr(node, "properties", {}) or {}
+        return ADRRef(
+            repository=repository,
+            adr_id=str(props.get(ADR_ID_KEY, "")),
+            title=str(props.get(TITLE_KEY, "")),
+            status=str(props.get(STATUS_KEY, "")),
+        )
+
+    @staticmethod
+    def _citations(props: dict) -> tuple[str, ...]:
+        adr_id = str(props.get(PROV_SOURCE_ADR_ID, "")).strip()
+        evidence = str(props.get(PROV_EVIDENCE_ID, "")).strip()
+        citations = []
+        if adr_id:
+            citations.append(f"adr:{adr_id}")
+        if evidence:
+            citations.append(f"evidence:{evidence}")
+        return tuple(citations)
+
+    def _node_to_provenanced(
+        self,
+        repository: RepositoryIdentity,
+        node: object,
+        snapshot: GraphSnapshotRef | None = None,
+    ) -> ProvenancedADR:
+        props = getattr(node, "properties", {}) or {}
+        # Validate provenance completeness/scope; raises if a node was persisted
+        # without the required lineage (should never happen via the write path).
+        provenance_from_properties(repository, props)
+        return ProvenancedADR(
+            repository=repository,
+            adr=self._node_to_ref(repository, node),
+            citations=self._citations(props),
+            snapshot=snapshot,
+        )
+
+    def list_adrs(self, repository: RepositoryIdentity) -> tuple[ADRRef, ...]:
+        """Return repository-scoped references to every approved ADR node."""
+
+        return tuple(
+            self._node_to_ref(repository, node)
+            for node in self._adr_nodes(repository)
+        )
+
+    def fetch_adr(
+        self, repository: RepositoryIdentity, adr_id: str
+    ) -> ProvenancedADR | None:
+        """Return a provenanced citation DTO for one ADR, or ``None``."""
+
+        for node in self._adr_nodes(repository):
+            props = getattr(node, "properties", {}) or {}
+            if str(props.get(ADR_ID_KEY)) == adr_id:
+                return self._node_to_provenanced(repository, node)
+        return None
+
+    def traverse_from_code_area(
+        self,
+        repository: RepositoryIdentity,
+        code_area_id: str,
+        relationship_types: set[RelationshipType] | None = None,
+        max_depth: int = 2,
+        snapshot: GraphSnapshotRef | None = None,
+    ) -> list[ADRPath]:
+        """Return approved-ADR traversal paths for a code area (read-only)."""
+
+        nodes = self._adr_nodes(repository)
+        if not nodes:
+            return []
+        adrs = tuple(self._node_to_ref(repository, node) for node in nodes)
+        edges = self._scoped_edges(repository, relationship_types)
+        return [
+            ADRPath(
+                repository=repository,
+                code_area_id=code_area_id,
+                edges=edges,
+                adrs=adrs,
+            )
+        ]
+
+    def _scoped_edges(
+        self,
+        repository: RepositoryIdentity,
+        relationship_types: set[RelationshipType] | None,
+    ) -> tuple[GraphEdge, ...]:
+        if not graph_meta_path(self._config, repository).exists():
+            return ()
+        store = self._open_store(repository)
+        wanted_scope = scope_key(repository)
+        edges: list[GraphEdge] = []
+        for _src, relation, _dst in store.get_rel_map(store.get(), depth=1):
+            props = getattr(relation, "properties", {}) or {}
+            if props.get(SCOPE_KEY_PROP) != wanted_scope:
+                continue
+            try:
+                rel = RelationshipType.from_label(relation.label)
+            except Exception:  # noqa: BLE001 - unknown labels are skipped on read
+                continue
+            if relationship_types is not None and rel not in relationship_types:
+                continue
+            edges.append(
+                GraphEdge(
+                    repository=repository,
+                    from_node=NodeId(repository=repository, value=relation.source_id),
+                    to_node=NodeId(repository=repository, value=relation.target_id),
+                    relationship=rel,
+                    reason=props.get("reason") or None,
+                )
+            )
+        # Deduplicate (get_rel_map can repeat edges).
+        seen: set[tuple] = set()
+        unique: list[GraphEdge] = []
+        for edge in edges:
+            key = (edge.from_node.value, edge.to_node.value, edge.relationship.value)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(edge)
+        return tuple(unique)
+
+    def answer_why(
+        self,
+        repository: RepositoryIdentity,
+        question: str,
+        code_area_id: str | None = None,
+        snapshot: GraphSnapshotRef | None = None,
+        limit: int = 5,
+    ) -> WhyAnswer:
+        """Answer a why-question from approved ADR context only (read-only)."""
+
+        nodes = self._adr_nodes(repository)
+        if not nodes:
+            return WhyAnswer(
+                repository=repository,
+                question=question,
+                answer=(
+                    "No approved ADR context is available for this repository."
+                ),
+                adr_id=None,
+                citations=(),
+                found=False,
+            )
+        primary = nodes[0]
+        props = getattr(primary, "properties", {}) or {}
+        ref = self._node_to_ref(repository, primary)
+        provenance = tuple(
+            self._node_to_provenanced(repository, node, snapshot)
+            for node in nodes[: max(limit, 0)]
+        )
+        return WhyAnswer(
+            repository=repository,
+            question=question,
+            answer=f"Approved decision {ref.adr_id}: {ref.title}.",
+            adr_id=ref.adr_id,
+            citations=self._citations(props),
+            found=True,
+            provenance=provenance,
+        )
+
+    def validate_snapshot_current(
+        self, repository: RepositoryIdentity, snapshot: GraphSnapshotRef
+    ) -> SnapshotState:
+        """Return whether ``snapshot`` still matches the latest revision."""
+
+        return snapshot_state(snapshot, self._current_revision(repository))
 
 
 __all__ = ["LlamaIndexPropertyGraphAdapter"]
