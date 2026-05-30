@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 
-from living_adr.core.graph.models import SchemaVersion, utc_now
+from living_adr.core.graph.models import MigrationResult, SchemaVersion, utc_now
 from living_adr.core.repository import RepositoryIdentity
 from living_adr.graph.persistence import (
     GraphPersistenceConfig,
@@ -172,6 +172,41 @@ class LlamaIndexPropertyGraphAdapter:
                 f"{ADAPTER_NAME} ({ADAPTER_SCHEMA_VERSION.label})"
             )
         return version
+
+    def migrate_schema(
+        self,
+        repository: RepositoryIdentity,
+        target_version: SchemaVersion,
+        decision: object,
+    ) -> MigrationResult:
+        """Apply the schema-version governance hook for a repository graph.
+
+        This is the write-side migration hook required by feature 006's
+        ``ArchitectureGraphStore`` port. Approval enforcement happens upstream in
+        ``ApprovalBoundMutationService``; here we record the version transition
+        and persist it. An uninitialized repository is initialized first so the
+        transition has a well-defined ``from_version``.
+        """
+
+        meta = self._read_meta(repository)
+        if meta is None:
+            self.initialize_repository(repository)
+            meta = dict(self._read_meta(repository) or self._meta_default(repository))
+        else:
+            meta = dict(meta)
+        from_version = self._meta_schema_version(meta)
+        meta["schema_version"] = {
+            "major": target_version.major,
+            "minor": target_version.minor,
+        }
+        meta["revision"] = int(meta.get("revision", 0)) + 1
+        self._write_meta(repository, meta)
+        return MigrationResult(
+            repository=repository,
+            from_version=from_version,
+            to_version=target_version,
+            applied=True,
+        )
 
 
 __all__ = ["LlamaIndexPropertyGraphAdapter"]
