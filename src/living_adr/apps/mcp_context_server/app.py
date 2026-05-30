@@ -16,9 +16,15 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from mcp.server import Server
 from mcp.types import TextContent, Tool
+
+if TYPE_CHECKING:
+    from living_adr.apps.mcp_context_server.dependencies import (
+        McpServerDependencies,
+    )
 
 SERVER_NAME = "living-adr-mcp"
 SERVER_INSTRUCTIONS = (
@@ -78,10 +84,26 @@ def build_server(
     )
 
 
+def build_app(deps: McpServerDependencies) -> McpContextServerApp:
+    """Assemble the read-only MCP server with its registered tool handlers.
+
+    All graph access flows through the injected read-only query port; the
+    dispatch closure maps tool calls to the synchronous handlers in ``tools.py``.
+    """
+
+    from living_adr.apps.mcp_context_server.tools import (
+        TOOL_DEFINITIONS,
+        make_dispatch,
+    )
+
+    return build_server(tools=TOOL_DEFINITIONS, dispatch=make_dispatch(deps))
+
+
 __all__ = [
     "SERVER_NAME",
     "SERVER_INSTRUCTIONS",
     "DispatchFn",
     "McpContextServerApp",
     "build_server",
+    "build_app",
 ]
