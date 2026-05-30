@@ -58,6 +58,7 @@ class PublicationConflictExhaustedError(PublicationError):
 class PublicationStatus(StrEnum):
     """Outcome of one publish-back attempt (audit-friendly, exhaustive)."""
 
+    PENDING = "pending"
     COMMITTED = "committed"
     SKIPPED_BY_POLICY = "skipped_by_policy"
     ALREADY_PUBLISHED = "already_published"
