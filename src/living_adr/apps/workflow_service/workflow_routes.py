@@ -14,6 +14,7 @@ operator script, or a test.
 from __future__ import annotations
 
 from living_adr.core.models import SCMEvent
+from living_adr.workflow.orchestration_replay import WorkflowReplayService
 from living_adr.workflow.review_resume import ReviewResumeService, WorkflowRunResult
 from living_adr.workflow.state import (
     ReviewResumeCommand,
@@ -24,8 +25,13 @@ from living_adr.workflow.state import (
 class WorkflowRoutes:
     """Internal handler seam binding workflow-service callers to the graph."""
 
-    def __init__(self, service: ReviewResumeService) -> None:
+    def __init__(
+        self,
+        service: ReviewResumeService,
+        replay_service: WorkflowReplayService | None = None,
+    ) -> None:
         self._service = service
+        self._replay = replay_service or WorkflowReplayService(service)
 
     def start(
         self,
@@ -46,6 +52,21 @@ class WorkflowRoutes:
         """Resume a paused HITL review with a typed reviewer command."""
 
         return self._service.resume_review(thread_id, command)
+
+    def replay(
+        self,
+        event: SCMEvent,
+        *,
+        source_delivery_id: str | None = None,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> WorkflowRunResult:
+        """Idempotently replay a stored event into its deterministic thread."""
+
+        return self._replay.replay_event(
+            event,
+            source_delivery_id=source_delivery_id,
+            evidence_refs=evidence_refs,
+        )
 
 
 __all__ = ["WorkflowRoutes"]

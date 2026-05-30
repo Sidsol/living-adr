@@ -128,6 +128,41 @@ class ReviewResumeService:
         output = self._app.invoke(state, config)
         return self._build_result(tid, output, config)
 
+    def inspect(self, thread_id: str) -> WorkflowRunResult | None:
+        """Return the current durable state for ``thread_id`` without re-running.
+
+        Returns ``None`` when the thread has no persisted state. Used by the
+        replay bridge to make duplicate replays idempotent (no re-invocation, no
+        duplicate review request or mutation). When the thread is paused at the
+        HITL gate, the pending interrupt payload is recovered from the snapshot.
+        """
+
+        config = {"configurable": {"thread_id": thread_id}}
+        snapshot = self._app.get_state(config)
+        values = dict(snapshot.values)
+        if not values:
+            return None
+
+        interrupted = bool(snapshot.next)
+        review_request: ReviewRequestPayload | None = None
+        for task in snapshot.tasks:
+            for pending in getattr(task, "interrupts", ()) or ():
+                if isinstance(pending.value, ReviewRequestPayload):
+                    review_request = pending.value
+        if review_request is None:
+            candidate = values.get("review_request")
+            if isinstance(candidate, ReviewRequestPayload):
+                review_request = candidate
+
+        return WorkflowRunResult(
+            thread_id=thread_id,
+            status=values.get("status"),
+            interrupted=interrupted,
+            review_request=review_request,
+            mutation_result=values.get("mutation_result"),
+            values=values,
+        )
+
     def resume_review(
         self, thread_id: str, command: ReviewResumeCommand
     ) -> WorkflowRunResult:
