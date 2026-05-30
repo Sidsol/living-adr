@@ -29,7 +29,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from living_adr.core.observability import NoOpObservability, Observability
 from living_adr.hitl.auth import NonceSigner, UITokenGuard
 from living_adr.hitl.gateway import ReviewWorkflowGateway
-from living_adr.hitl.models import page_model_from_payload
+from living_adr.hitl.hashing import compute_edited_draft_hash
+from living_adr.hitl.models import page_model_from_payload, validate_edited_draft
 from living_adr.workflow.state import ReviewAction, ReviewResumeCommand
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates" / "hitl"
@@ -215,9 +216,30 @@ def create_hitl_app(
                 reason=reason,
             )
 
+        edited: str | None = None
+        edited_hash: str | None = None
+        if review_action is ReviewAction.APPROVE_AFTER_EDIT:
+            validation = validate_edited_draft(edited_content)
+            if not validation.ok:
+                return _render_review(
+                    thread_id,
+                    page,
+                    status_code=400,
+                    field_errors={
+                        "edited_content": "; ".join(
+                            e.message for e in validation.errors
+                        )
+                    },
+                    edited_content=validation.normalized_content,
+                )
+            edited = validation.normalized_content
+            edited_hash = compute_edited_draft_hash(edited)
+
         command = ReviewResumeCommand(
             action=review_action,
             reviewer_id=reviewer_id,
+            edited_content=edited,
+            edited_content_hash=edited_hash,
         )
         outcome = gateway.submit_resume(thread_id, command)
         # Metadata-only: action + status enums, never the reason/comment text.
