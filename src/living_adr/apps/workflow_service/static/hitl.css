@@ -1,0 +1,107 @@
+/* Minimal accessible styling for the HITL review UI (feature 009).
+   Focus visibility, error/confidence states that do not rely on color alone,
+   and a keyboard skip link. No external assets or web fonts. */
+
+:root {
+  --fg: #1a1a1a;
+  --bg: #ffffff;
+  --accent: #1f5fbf;
+  --error: #b3261e;
+  --muted: #555;
+  --border: #cccccc;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.5;
+  margin: 0;
+}
+
+main {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.2rem; margin-top: 1.5rem; }
+
+/* Keyboard accessibility: visible focus on every interactive element. */
+a:focus,
+button:focus,
+input:focus,
+textarea:focus,
+[tabindex]:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+}
+.skip-link:focus {
+  position: static;
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: #fff;
+}
+
+.provisional-notice {
+  border-left: 4px solid var(--accent);
+  background: #eef3fb;
+  padding: 0.75rem 1rem;
+}
+
+.draft-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f6f6f6;
+  border: 1px solid var(--border);
+  padding: 1rem;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  margin: 1rem 0;
+}
+.radio-row { margin: 0.25rem 0; }
+
+.field { margin: 1rem 0; }
+.field label { display: block; font-weight: 600; }
+.field-help { color: var(--muted); margin: 0.25rem 0; }
+textarea { width: 100%; font-family: ui-monospace, monospace; }
+
+/* Errors: an icon/text marker, not color alone. */
+.error-summary {
+  border: 2px solid var(--error);
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+.error-summary h2::before { content: "\26A0\FE0F  "; } /* warning sign */
+.field-error {
+  color: var(--error);
+  font-weight: 600;
+}
+.field-error::before { content: "\26A0\FE0F  "; }
+[aria-invalid="true"] { border: 2px solid var(--error); }
+
+/* Confidence: band label always present; color is a secondary cue. */
+.confidence { font-weight: 600; }
+.confidence--high { color: #1b5e20; }
+.confidence--medium { color: #8a6d00; }
+.confidence--low { color: var(--error); }
+
+.form-controls { margin-top: 1.5rem; display: flex; gap: 1rem; align-items: center; }
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  cursor: pointer;
+}

@@ -1,0 +1,132 @@
+{# Accessible HITL review page (feature 009).
+   Renders a provisional ADR draft, its evidence, and the reviewer action form.
+   All draft-derived values are auto-escaped by Jinja2; raw draft text never
+   reaches logs/metrics (telemetry is metadata-only elsewhere). #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review draft {{ page.draft_id }} &middot; LivingADR</title>
+  <link rel="stylesheet" href="/static/hitl.css">
+</head>
+<body>
+  <a class="skip-link" href="#review-actions">Skip to review actions</a>
+  <main id="main" class="review">
+    <h1>Review pending ADR draft</h1>
+
+    <p class="provisional-notice" role="note">
+      <strong>Provisional draft.</strong> {{ page.provisional_notice }}
+    </p>
+
+    {% if errors %}
+    <div id="error-summary" class="error-summary" role="alert" tabindex="-1"
+         aria-labelledby="error-summary-heading">
+      <h2 id="error-summary-heading">There is a problem</h2>
+      <ul>
+        {% for error in errors %}
+        <li><a href="#{{ error.field }}">{{ error.message }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <section aria-labelledby="summary-heading" class="summary">
+      <h2 id="summary-heading">Draft summary</h2>
+      <dl>
+        <dt>Repository</dt>
+        <dd>{{ page.repository_key }}</dd>
+        <dt>Event key</dt>
+        <dd>{{ page.event_key }}</dd>
+        <dt>Draft id</dt>
+        <dd>{{ page.draft_id }}</dd>
+        <dt>Draft content hash</dt>
+        <dd><code>{{ page.draft_content_hash }}</code></dd>
+        <dt>Confidence</dt>
+        <dd>
+          <span class="confidence confidence--{{ page.confidence_band.value }}">
+            {{ page.confidence_band.label }} ({{ page.confidence_percent }}%)
+          </span>
+        </dd>
+      </dl>
+    </section>
+
+    <section aria-labelledby="draft-heading" class="draft">
+      <h2 id="draft-heading">Draft preview</h2>
+      <pre class="draft-preview">{{ page.draft_preview }}</pre>
+    </section>
+
+    <section aria-labelledby="evidence-heading" class="evidence">
+      <h2 id="evidence-heading">Evidence &amp; citations</h2>
+      {% if page.evidence_ids %}
+      <ul class="evidence-list">
+        {% for evidence_id in page.evidence_ids %}
+        <li>{{ evidence_id }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>No evidence citations were attached to this draft.</p>
+      {% endif %}
+    </section>
+
+    <section aria-labelledby="review-actions-heading" class="actions">
+      <h2 id="review-actions-heading">Review decision</h2>
+      <form id="review-actions" method="post"
+            action="/hitl/reviews/{{ page.thread_id }}/submit"
+            aria-describedby="actions-help">
+        <p id="actions-help">
+          Choose an action. Editing is required only for "Approve after edit".
+          Rejecting requires a reason.
+        </p>
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <input type="hidden" name="draft_content_hash"
+               value="{{ page.draft_content_hash }}">
+
+        <fieldset>
+          <legend>Action</legend>
+          {% for action in page.allowed_action_values %}
+          <div class="radio-row">
+            <input type="radio" id="action-{{ action }}" name="action"
+                   value="{{ action }}"{% if loop.first %} checked{% endif %}>
+            <label for="action-{{ action }}">{{ action.replace('_', ' ') }}</label>
+          </div>
+          {% endfor %}
+        </fieldset>
+
+        <div class="field">
+          <label for="edited_content">Edited draft (Markdown)</label>
+          <p id="edited_content-help" class="field-help">
+            Required for "Approve after edit". Must include Title, Status,
+            Context, Decision, and Consequences sections.
+          </p>
+          <textarea id="edited_content" name="edited_content" rows="16"
+                    aria-describedby="edited_content-help{% if field_errors.get('edited_content') %} edited_content-error{% endif %}"
+                    {% if field_errors.get('edited_content') %}aria-invalid="true"{% endif %}>{{ edited_content or '' }}</textarea>
+          {% if field_errors.get('edited_content') %}
+          <p id="edited_content-error" class="field-error" role="alert">
+            {{ field_errors['edited_content'] }}
+          </p>
+          {% endif %}
+        </div>
+
+        <div class="field">
+          <label for="reason">Reason (required to reject, optional to defer)</label>
+          <textarea id="reason" name="reason" rows="3"
+                    aria-describedby="{% if field_errors.get('reason') %}reason-error{% endif %}"
+                    {% if field_errors.get('reason') %}aria-invalid="true"{% endif %}>{{ reason or '' }}</textarea>
+          {% if field_errors.get('reason') %}
+          <p id="reason-error" class="field-error" role="alert">
+            {{ field_errors['reason'] }}
+          </p>
+          {% endif %}
+        </div>
+
+        <div class="form-controls">
+          <button type="submit" class="primary">Submit decision</button>
+          <a class="secondary" href="/hitl/reviews">Cancel and return to list</a>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

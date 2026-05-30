@@ -1,0 +1,33 @@
+{# Accessible status / error state page (feature 009).
+   Used for submitted (success), not-found/expired, unauthorized, and other
+   terminal states. Never renders draft content or internal details. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ heading }} &middot; LivingADR</title>
+  <link rel="stylesheet" href="/static/hitl.css">
+</head>
+<body>
+  <main id="main" class="status status--{{ state }}">
+    <h1>{{ heading }}</h1>
+    <p class="status-message" role="status" tabindex="-1" id="status-message">
+      {{ message }}
+    </p>
+    {% if action_label %}
+    <dl class="status-detail">
+      <dt>Action recorded</dt>
+      <dd>{{ action_label }}</dd>
+      {% if outcome_status %}
+      <dt>Workflow status</dt>
+      <dd>{{ outcome_status }}</dd>
+      {% endif %}
+    </dl>
+    {% endif %}
+    <p class="status-actions">
+      <a href="/hitl/reviews">Return to pending reviews</a>
+    </p>
+  </main>
+</body>
+</html>
