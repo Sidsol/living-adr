@@ -48,3 +48,59 @@ class SCMEvent(BaseModel):
     merged_at: datetime
     diff_summary: str
     changed_files: tuple[str, ...]
+
+
+class ChangeEvidence(BaseModel):
+    """Immutable evidence gathered from a merged PR (smoke depth).
+
+    Evidence is stored separately from inferred rationale (architecture
+    #data-model, FM-06). It is never authoritative on its own.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    evidence_id: str
+    source_delivery_id: str
+    pr_number: int
+    diff_summary: str
+    changed_files: tuple[str, ...]
+
+
+class StructuralChange(BaseModel):
+    """A classified architecture-significant change (smoke depth).
+
+    Links to the source PR evidence and later to the approved ADR node.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    change_id: str
+    change_type: str
+    summary: str
+    evidence_id: str
+
+
+class ADRDraft(BaseModel):
+    """Provisional ADR draft (smoke depth). Never authoritative until approved.
+
+    ``is_stub`` and the rendered markdown make it explicit that this is
+    deterministic smoke output, not production Claude-authored rationale
+    (architecture #anti-patterns FM-06/FM-23).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    draft_id: str
+    structural_change_id: str
+    status: str
+    title: str
+    context: str
+    decision: str
+    consequences: str
+    alternatives: str
+    citations: tuple[str, ...]
+    rendered_markdown: str
+    is_stub: bool = True
