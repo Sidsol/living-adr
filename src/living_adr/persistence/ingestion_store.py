@@ -23,7 +23,7 @@ from living_adr.core.ingestion import (
     IngestionDelivery,
     IngestionErrorCategory,
 )
-from living_adr.core.scm import CandidateEvidence
+from living_adr.core.scm import CandidateEvidence, SCMEventEnvelope
 
 
 @runtime_checkable
@@ -40,6 +40,12 @@ class IngestionStore(Protocol):
 
     def put_evidence(self, evidence: CandidateEvidence) -> CandidateEvidence: ...
 
+    def get_envelope(self, delivery_id: str) -> SCMEventEnvelope | None: ...
+
+    def put_envelope(
+        self, delivery_id: str, envelope: SCMEventEnvelope
+    ) -> SCMEventEnvelope: ...
+
 
 class InMemoryIngestionStore:
     """In-memory delivery store for tests and single-process PoC runs."""
@@ -47,6 +53,7 @@ class InMemoryIngestionStore:
     def __init__(self) -> None:
         self._deliveries: dict[str, IngestionDelivery] = {}
         self._evidence: dict[str, CandidateEvidence] = {}
+        self._envelopes: dict[str, SCMEventEnvelope] = {}
 
     def get_delivery(self, delivery_id: str) -> IngestionDelivery | None:
         return self._deliveries.get(delivery_id)
@@ -69,6 +76,15 @@ class InMemoryIngestionStore:
         # Immutable evidence: first write wins, idempotent on the normalized key.
         self._evidence.setdefault(evidence.normalized_pr_key, evidence)
         return self._evidence[evidence.normalized_pr_key]
+
+    def get_envelope(self, delivery_id: str) -> SCMEventEnvelope | None:
+        return self._envelopes.get(delivery_id)
+
+    def put_envelope(
+        self, delivery_id: str, envelope: SCMEventEnvelope
+    ) -> SCMEventEnvelope:
+        self._envelopes[delivery_id] = envelope
+        return envelope
 
 
 _DELIVERY_COLUMNS = (
@@ -114,6 +130,14 @@ class SqliteIngestionStore:
             CREATE TABLE IF NOT EXISTS ingestion_evidence (
                 normalized_pr_key TEXT PRIMARY KEY,
                 evidence_json TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_envelopes (
+                delivery_id TEXT PRIMARY KEY,
+                envelope_json TEXT NOT NULL
             )
             """
         )
@@ -210,6 +234,28 @@ class SqliteIngestionStore:
         stored = self.get_evidence(evidence.normalized_pr_key)
         assert stored is not None
         return stored
+
+    def get_envelope(self, delivery_id: str) -> SCMEventEnvelope | None:
+        cur = self._conn.execute(
+            "SELECT envelope_json FROM ingestion_envelopes WHERE delivery_id = ?",
+            (delivery_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return SCMEventEnvelope.model_validate_json(row["envelope_json"])
+
+    def put_envelope(
+        self, delivery_id: str, envelope: SCMEventEnvelope
+    ) -> SCMEventEnvelope:
+        self._conn.execute(
+            "INSERT INTO ingestion_envelopes (delivery_id, envelope_json) "
+            "VALUES (?, ?) ON CONFLICT(delivery_id) DO UPDATE SET "
+            "envelope_json=excluded.envelope_json",
+            (delivery_id, envelope.model_dump_json()),
+        )
+        self._conn.commit()
+        return envelope
 
 
 __all__ = [

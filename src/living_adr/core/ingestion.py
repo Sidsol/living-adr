@@ -110,9 +110,32 @@ class IngestionDelivery(BaseModel):
         return self.error_category in RETRYABLE_CATEGORIES
 
 
+DEFAULT_MAX_RETRIES = 3
+
+
+def classify_failure(
+    category: IngestionErrorCategory,
+    retry_count: int,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+) -> DeliveryStatus:
+    """Decide the next delivery status after a processing/fetch failure.
+
+    - Retryable categories (rate limit, transient) stay ``RETRYABLE`` until the
+      retry budget is exhausted, then become ``DEAD_LETTER``.
+    - Non-retryable categories (permission, not-found, malformed, unknown) are
+      poison and go straight to ``DEAD_LETTER`` for operator triage.
+    """
+
+    if category in RETRYABLE_CATEGORIES and retry_count < max_retries:
+        return DeliveryStatus.RETRYABLE
+    return DeliveryStatus.DEAD_LETTER
+
+
 __all__ = [
     "DeliveryStatus",
     "IngestionErrorCategory",
     "RETRYABLE_CATEGORIES",
     "IngestionDelivery",
+    "DEFAULT_MAX_RETRIES",
+    "classify_failure",
 ]

@@ -16,10 +16,10 @@ from __future__ import annotations
 from living_adr.apps.workflow_service.webhooks import WebhookResponse
 from living_adr.core.config import LivingADRConfig
 from living_adr.core.ingestion import (
-    RETRYABLE_CATEGORIES,
     DeliveryStatus,
     IngestionDelivery,
     IngestionErrorCategory,
+    classify_failure,
 )
 from living_adr.core.observability import NoOpObservability, Observability
 from living_adr.core.scm import (
@@ -183,15 +183,14 @@ class IngestionPipeline:
         envelope = normalize_to_scm_event(
             delivery_id, result.repository, result.payload
         )
+        self._store.put_envelope(delivery_id, envelope)
         assert self._evidence_builder is not None
         try:
             self._evidence_builder.build(envelope)
         except SCMProviderError as exc:
             category = category_for_error(exc)
-            retryable = category in RETRYABLE_CATEGORIES
-            status = (
-                DeliveryStatus.RETRYABLE if retryable else DeliveryStatus.FAILED
-            )
+            status = classify_failure(category, retry_count=0)
+            retryable = status is DeliveryStatus.RETRYABLE
             delivery = IngestionDelivery(
                 delivery_id=delivery_id,
                 status=status,
@@ -207,6 +206,7 @@ class IngestionPipeline:
                 {
                     "delivery_id": delivery_id,
                     "error_category": category.value,
+                    "status": status.value,
                     "retryable": retryable,
                 },
             )
