@@ -141,3 +141,57 @@ class ApprovedReviewDecision(BaseModel):
     minted_at: datetime
     approved: bool = True
     is_stub: bool = True
+
+
+class ADRProvenance(BaseModel):
+    """Provenance links binding an approved ADR record to its smoke pipeline."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_delivery_id: str
+    evidence_id: str
+    structural_change_id: str
+    adr_draft_id: str
+    decision_id: str
+
+
+class ADRRecord(BaseModel):
+    """Authoritative approved decision record (smoke depth).
+
+    This is the canonical approved rationale; the graph/query layer is a
+    projection over it (architecture #data-model, FM-23 review-gated record).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    adr_id: str
+    title: str
+    status: str
+    markdown: str
+    content_hash: str
+    provenance: ADRProvenance
+
+
+class ADRRef(BaseModel):
+    """Lightweight approved-ADR reference for list/query projections."""
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    adr_id: str
+    title: str
+    status: str
+
+
+class WhyAnswer(BaseModel):
+    """Read-only MCP-style answer derived from approved context only."""
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    question: str
+    answer: str
+    adr_id: str | None
+    citations: tuple[str, ...]
+    found: bool
