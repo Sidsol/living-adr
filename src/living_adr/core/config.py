@@ -22,6 +22,21 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from living_adr.core.repository import RepositoryIdentity
 
 
+def _is_safe_relative_path(template: str) -> bool:
+    """True when ``template`` is a relative, POSIX-style path with no traversal.
+
+    Backslashes, drive letters (``C:``), leading slashes, and ``..`` segments are
+    all rejected so a publish target can never escape the repository tree.
+    """
+
+    if "\\" in template or template.startswith("/"):
+        return False
+    if len(template) >= 2 and template[1] == ":":  # drive letter, e.g. C:
+        return False
+    segments = template.split("/")
+    return ".." not in segments
+
+
 class PublicationPolicy(StrEnum):
     """Where approved ADRs are published for a repository.
 
@@ -69,6 +84,33 @@ class RepositoryConfig(BaseModel):
             raise ValueError("must not be empty or whitespace")
         return stripped
 
+    @model_validator(mode="after")
+    def _validate_publish_target(self) -> RepositoryConfig:
+        """Publish-to-GitHub policies require a valid, relative ADR target."""
+
+        if not self.adr_publication_policy.publishes_to_github:
+            return self
+
+        branch = (self.adr_target_branch or "").strip()
+        if not branch:
+            raise ValueError(
+                "adr_target_branch is required when adr_publication_policy "
+                "publishes to GitHub"
+            )
+
+        template = (self.adr_path_template or "").strip()
+        if not template:
+            raise ValueError(
+                "adr_path_template is required when adr_publication_policy "
+                "publishes to GitHub"
+            )
+        if not _is_safe_relative_path(template):
+            raise ValueError(
+                "adr_path_template must be a relative POSIX path without '..' "
+                f"segments, drive letters, or backslashes: {template!r}"
+            )
+        return self
+
     @property
     def canonical_key(self) -> str:
         """Stable ``host/owner/repo`` key for this repository."""
@@ -111,3 +153,21 @@ class LivingADRConfig(BaseModel):
             if entry.canonical_key == canonical_key:
                 return entry
         return None
+
+    def allows_external_llm(self, repository: RepositoryIdentity | str) -> bool:
+        """Explicit external-LLM egress decision for ``repository``.
+
+        Accepts a :class:`RepositoryIdentity` or a canonical key string. Unknown
+        repositories are denied by default — external LLM egress is never
+        inferred for a repository that is not configured (FM-14, NFR-2).
+        """
+
+        key = (
+            repository.key
+            if isinstance(repository, RepositoryIdentity)
+            else repository
+        )
+        entry = self.get(key)
+        if entry is None:
+            return False
+        return entry.external_llm_allowed
