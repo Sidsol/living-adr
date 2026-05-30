@@ -1,0 +1,44 @@
+version: "2024-06-01"
+cases:
+  - case_id: why-postgres
+    repository_key: github.com/acme/living-adr
+    question: "Why did we choose PostgreSQL for the context store?"
+    code_area_id: storage
+    expected_adr_ids: [ADR-0007]
+    expected_references: [ADR-0007]
+    labels: [storage, database]
+    edge_case: false
+    expected_answerable: true
+    sample_answer:
+      adr_id: ADR-0007
+      citations: [ADR-0007]
+      found: true
+      answer: "PostgreSQL was selected per ADR-0007."
+  - case_id: why-event-sourcing
+    repository_key: github.com/acme/living-adr
+    question: "Why is ingestion idempotent?"
+    code_area_id: ingestion
+    expected_adr_ids: [ADR-0011, ADR-0012]
+    expected_references: [ADR-0011, ADR-0012]
+    labels: [ingestion]
+    edge_case: false
+    expected_answerable: true
+    sample_answer:
+      adr_id: ADR-0011
+      citations: [ADR-0011, ADR-0012]
+      found: true
+      answer: "Idempotent ingestion is required by ADR-0011 and ADR-0012."
+  # Edge/rejected example: an unanswerable question with no approved ADR context.
+  - case_id: unanswerable-future-roadmap
+    repository_key: github.com/acme/living-adr
+    question: "What will the pricing model be next year?"
+    expected_adr_ids: []
+    expected_references: []
+    labels: [edge, unanswerable]
+    edge_case: true
+    expected_answerable: false
+    sample_answer:
+      adr_id: null
+      citations: []
+      found: false
+      answer: ""

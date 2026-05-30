@@ -1,0 +1,45 @@
+version: "2024-06-01"
+cases:
+  - case_id: structural-change-draft
+    repository_key: github.com/acme/living-adr
+    require_evidence_citation: true
+    require_alternatives: true
+    require_consequences: true
+    require_provisional_label: true
+    labels: [structural]
+    edge_case: false
+    expected_pass: true
+    sample_draft:
+      cites_evidence: true
+      lists_alternatives: true
+      states_consequences: true
+      labeled_provisional: true
+  - case_id: behavioral-change-draft
+    repository_key: github.com/acme/living-adr
+    require_evidence_citation: true
+    require_alternatives: false
+    require_consequences: true
+    require_provisional_label: true
+    labels: [behavioral]
+    edge_case: false
+    expected_pass: true
+    sample_draft:
+      cites_evidence: true
+      lists_alternatives: false
+      states_consequences: true
+      labeled_provisional: true
+  # Edge/rejected example: a deficient draft missing evidence + provisional label.
+  - case_id: deficient-draft-missing-evidence
+    repository_key: github.com/acme/living-adr
+    require_evidence_citation: true
+    require_alternatives: true
+    require_consequences: true
+    require_provisional_label: true
+    labels: [edge, deficient]
+    edge_case: true
+    expected_pass: false
+    sample_draft:
+      cites_evidence: false
+      lists_alternatives: true
+      states_consequences: true
+      labeled_provisional: false
