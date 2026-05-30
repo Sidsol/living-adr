@@ -104,3 +104,40 @@ class ADRDraft(BaseModel):
     citations: tuple[str, ...]
     rendered_markdown: str
     is_stub: bool = True
+
+
+class ApprovalEvent(BaseModel):
+    """Human approve/edit/reject event (smoke depth: accept-only).
+
+    Stores reviewer identity and decision provenance even when author and
+    reviewer are the same person (FM-05: decision ownership).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    reviewer_id: str
+    adr_draft_id: str
+    action: str  # "approve" only in the smoke skeleton
+
+
+class ApprovedReviewDecision(BaseModel):
+    """Capability object minted only by an approved review (smoke depth).
+
+    Mirrors the architecture capability shape at minimal depth: it binds the
+    reviewer, the exact reviewed draft (via SHA-256 content hash), the structural
+    change, and the repository scope. Only an approved event mints this; it is
+    required to authorize any authoritative ADR persistence.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    decision_id: str
+    reviewer_id: str
+    adr_draft_id: str
+    adr_draft_content_hash: str
+    structural_change_event_id: str
+    minted_at: datetime
+    approved: bool = True
+    is_stub: bool = True
