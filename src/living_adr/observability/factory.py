@@ -18,12 +18,35 @@ from living_adr.core.observability import NoOpObservability, Observability
 from living_adr.observability.config import LangSmithSettings
 from living_adr.observability.langsmith_adapter import (
     LangSmithObservability,
+    Redactor,
     TraceSink,
 )
+from living_adr.observability.redaction import RedactionResult, redact_metadata
 
 _LOG = logging.getLogger("living_adr.observability")
 
 SinkBuilder = Callable[[LangSmithSettings], TraceSink]
+
+
+def _build_redactor(settings: LangSmithSettings) -> Redactor:
+    """Bind the default-deny redaction policy to ``settings``.
+
+    The repository key is read from the event metadata (``repository``) so the
+    sensitive-repository raw-export override can be evaluated per event.
+    """
+
+    def _redact(name: str, metadata: dict[str, object]) -> RedactionResult:
+        repository_key = metadata.get("repository")
+        return redact_metadata(
+            name,
+            metadata,
+            settings=settings,
+            repository_key=(
+                repository_key if isinstance(repository_key, str) else None
+            ),
+        )
+
+    return _redact
 
 
 def _default_sink_builder(settings: LangSmithSettings) -> TraceSink:
@@ -38,14 +61,15 @@ def build_observability(
     *,
     sink: TraceSink | None = None,
     sink_builder: SinkBuilder | None = None,
-    metadata_preparer: object | None = None,
+    redactor: Redactor | None = None,
     logger: logging.Logger | None = None,
 ) -> Observability:
     """Return the configured :class:`Observability` implementation.
 
     With no/invalid LangSmith config, returns :class:`NoOpObservability`. With a
     valid config, returns a :class:`LangSmithObservability` bound to ``sink`` (or
-    one built by ``sink_builder``). Any construction failure falls back to no-op.
+    one built by ``sink_builder``) and the default-deny redaction policy. Any
+    construction failure falls back to no-op.
     """
 
     log = logger or _LOG
@@ -67,7 +91,7 @@ def build_observability(
     return LangSmithObservability(
         resolved_sink,
         settings,
-        metadata_preparer=metadata_preparer,  # type: ignore[arg-type]
+        redactor=redactor or _build_redactor(settings),
         logger=log,
     )
 

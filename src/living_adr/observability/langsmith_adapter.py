@@ -21,10 +21,16 @@ from contextlib import contextmanager
 from typing import Protocol
 
 from living_adr.core.observability import Metadata, ObservationSpan
+from living_adr.observability.logging import SafeStructuredLogger
+from living_adr.observability.redaction import RedactionResult
 
 _LOG = logging.getLogger("living_adr.observability")
 
-MetadataPreparer = Callable[[str, Mapping[str, object]], Mapping[str, object]]
+# A redactor maps (event_name, raw_metadata) -> a RedactionResult whose ``safe``
+# mapping is what actually reaches the sink. Slice 1 ships a passthrough; slice 2
+# wires the default-deny policy in via the factory.
+Redactor = Callable[[str, Mapping[str, object]], RedactionResult]
+MetadataPreparer = Redactor  # backwards-compatible alias
 
 
 class TraceSink(Protocol):
@@ -50,10 +56,10 @@ class TraceSink(Protocol):
     ) -> None: ...
 
 
-def _identity_preparer(
+def _passthrough_redactor(
     name: str, metadata: Mapping[str, object]
-) -> Mapping[str, object]:
-    return dict(metadata)
+) -> RedactionResult:
+    return RedactionResult(safe=dict(metadata))
 
 
 class LangSmithObservability:
@@ -64,19 +70,24 @@ class LangSmithObservability:
         sink: TraceSink,
         settings: object | None = None,
         *,
-        metadata_preparer: MetadataPreparer | None = None,
+        redactor: Redactor | None = None,
         logger: logging.Logger | None = None,
+        structured_logger: SafeStructuredLogger | None = None,
     ) -> None:
         self._sink = sink
         self._settings = settings
-        self._prepare = metadata_preparer or _identity_preparer
+        self._redact = redactor or _passthrough_redactor
         self._log = logger or _LOG
+        self._slog = structured_logger or SafeStructuredLogger(self._log)
 
     def _safe_metadata(
         self, name: str, metadata: Metadata
     ) -> Mapping[str, object]:
-        prepared = self._prepare(name, dict(metadata or {}))
-        return dict(prepared)
+        result = self._redact(name, dict(metadata or {}))
+        if result.redactions:
+            # Diagnostics carry paths/reasons only — never the raw value.
+            self._slog.log_redaction(name, result.redactions)
+        return dict(result.safe)
 
     def record_event(self, name: str, metadata: Metadata = None) -> None:
         try:
@@ -127,4 +138,4 @@ class LangSmithObservability:
                     )
 
 
-__all__ = ["LangSmithObservability", "TraceSink", "MetadataPreparer"]
+__all__ = ["LangSmithObservability", "TraceSink", "Redactor", "MetadataPreparer"]
