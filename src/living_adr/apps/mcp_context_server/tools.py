@@ -13,12 +13,14 @@ mutations, or config changes (NFR-1, FR-10).
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Mapping
 
 from mcp.types import Tool
 
 from living_adr.apps.mcp_context_server.dependencies import McpServerDependencies
 from living_adr.apps.mcp_context_server.errors import AdrNotFoundError, to_safe_error
+from living_adr.apps.mcp_context_server.observability import record_tool_call
 from living_adr.apps.mcp_context_server.serializers import (
     serialize_adr_ref,
     serialize_provenanced_adr,
@@ -220,23 +222,63 @@ TOOL_DEFINITIONS: list[Tool] = [
 ]
 
 
+def _summarize_result(
+    result: Mapping[str, object],
+) -> tuple[str, int | None, str | None]:
+    """Derive metadata-only (status, result_count, error_type) from a result.
+
+    Only structural counts/codes are read — never the answer body, citations, or
+    serialized ADR content.
+    """
+
+    error = result.get("error")
+    if isinstance(error, Mapping):
+        error_type = error.get("type")
+        return "error", None, str(error_type) if error_type is not None else None
+    count = result.get("count")
+    if isinstance(count, int):
+        return "ok", count, None
+    if "adr" in result:  # fetch_adr success returns exactly one ADR
+        return "ok", 1, None
+    if "found" in result:  # answer_why
+        return "ok", (1 if result.get("found") else 0), None
+    return "ok", None, None
+
+
 def make_dispatch(
     deps: McpServerDependencies,
 ) -> Callable[[str, Mapping[str, object]], dict[str, object]]:
     """Bind ``deps`` into a synchronous ``(name, arguments) -> mapping`` dispatch.
 
     Unknown tools and any handler exception are converted to safe MCP errors so
-    the boundary never raises adapter internals at the caller.
+    the boundary never raises adapter internals at the caller. Every call emits
+    metadata-only telemetry through the injected Observability port.
     """
 
     def dispatch(name: str, arguments: Mapping[str, object]) -> dict[str, object]:
+        raw_repo = arguments.get("repository")
+        repository_key = raw_repo if isinstance(raw_repo, str) else None
+        start = time.perf_counter()
         handler = TOOL_HANDLERS.get(name)
-        if handler is None:
-            return to_safe_error(McpValidationError(f"Unknown tool: {name!r}"))
         try:
-            return handler(deps, arguments)
+            if handler is None:
+                raise McpValidationError(f"Unknown tool: {name!r}")
+            result = handler(deps, arguments)
         except Exception as exc:  # noqa: BLE001 - mapped to a safe error mapping
-            return to_safe_error(exc)
+            result = to_safe_error(exc)
+        elapsed = time.perf_counter() - start
+
+        status, result_count, error_type = _summarize_result(result)
+        record_tool_call(
+            deps.observability,
+            tool=name,
+            repository_key=repository_key,
+            status=status,
+            elapsed_seconds=elapsed,
+            result_count=result_count,
+            error_type=error_type,
+        )
+        return result
 
     return dispatch
 

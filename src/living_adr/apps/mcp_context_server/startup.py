@@ -12,7 +12,7 @@ from pathlib import Path
 
 import anyio
 
-from living_adr.apps.mcp_context_server.app import McpContextServerApp, build_server
+from living_adr.apps.mcp_context_server.app import McpContextServerApp
 from living_adr.apps.startup_base import ConfigStartupBase
 
 
@@ -42,12 +42,29 @@ async def _serve_stdio(app: McpContextServerApp) -> None:  # pragma: no cover
 def main() -> int:  # pragma: no cover - process entrypoint, exercised manually
     """Console entrypoint: fail fast on invalid config, then serve over stdio.
 
-    Slice 1 wires the bootstrap path; later slices register the read-only
-    ``list_adrs`` / ``fetch_adr`` / ``answer_why`` tools into the server before
-    it is served.
+    Wires the validated config, the feature 007 read-only query adapter, and the
+    feature 002 Observability port into the MCP server, then serves it over
+    stdio (the only PoC transport). Only the read-side adapter is injected — no
+    write/mutation/SCM/LLM dependency is constructed here.
     """
 
-    load_startup_config()
-    app = build_server()
+    from living_adr.apps.mcp_context_server.app import build_app
+    from living_adr.apps.mcp_context_server.dependencies import (
+        McpServerDependencies,
+    )
+    from living_adr.apps.mcp_context_server.observability import (
+        build_observability_for_app,
+    )
+    from living_adr.graph.llamaindex_adapter import (
+        LlamaIndexPropertyGraphAdapter,
+    )
+
+    startup = load_startup_config()
+    deps = McpServerDependencies(
+        config=startup.config,
+        query=LlamaIndexPropertyGraphAdapter(),
+        observability=build_observability_for_app(),
+    )
+    app = build_app(deps)
     anyio.run(_serve_stdio, app)
     return 0
