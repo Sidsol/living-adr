@@ -200,6 +200,71 @@ class SCMProvider(Protocol):
     ) -> DiffEvidence: ...
 
 
+class RepositoryFile(BaseModel):
+    """One entry in a repository directory listing (provider-neutral).
+
+    ``sha`` is the blob/object id used as the optimistic-concurrency token when
+    updating an existing file; ``type`` distinguishes files from sub-directories.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    path: str
+    sha: str | None = None
+    type: str = "file"
+
+
+class FileContent(BaseModel):
+    """Decoded contents of a single repository file plus its concurrency token."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path: str
+    text: str
+    sha: str | None = None
+
+
+class CommitResult(BaseModel):
+    """Outcome of a single-file commit through the contents port."""
+
+    model_config = ConfigDict(frozen=True)
+
+    commit_sha: str
+    path: str
+    content_sha: str | None = None
+    created: bool = True
+
+
+@runtime_checkable
+class SCMContentsProvider(Protocol):
+    """Provider-neutral port for reading a directory and committing one ADR file.
+
+    Publish-back (feature 011) depends only on this narrow port; GitHub REST
+    details live in the adapter. Methods are minimal-access (FM-18): a single
+    directory listing, single-file reads, and a single-file create/update.
+    """
+
+    def list_directory(
+        self, repository: RepositoryIdentity, branch: str, directory: str
+    ) -> tuple[RepositoryFile, ...]: ...
+
+    def read_file(
+        self, repository: RepositoryIdentity, branch: str, path: str
+    ) -> FileContent | None: ...
+
+    def create_file(
+        self,
+        repository: RepositoryIdentity,
+        branch: str,
+        path: str,
+        content: str,
+        message: str,
+        *,
+        sha: str | None = None,
+    ) -> CommitResult: ...
+
+
 class SCMProviderError(Exception):
     """Base class for provider fetch failures, carrying an error category."""
 
@@ -219,6 +284,16 @@ class ResourceNotFoundError(SCMProviderError):
 
 
 class TransientProviderError(SCMProviderError):
+    category = IngestionErrorCategory.TRANSIENT
+
+
+class CommitConflictError(SCMProviderError):
+    """Optimistic-concurrency failure committing a file (branch head moved).
+
+    Categorized as TRANSIENT so publish-back may refresh state and retry within
+    a bounded budget before dead-lettering.
+    """
+
     category = IngestionErrorCategory.TRANSIENT
 
 
@@ -242,10 +317,15 @@ __all__ = [
     "InstallationVerification",
     "CandidateEvidence",
     "SCMProvider",
+    "RepositoryFile",
+    "FileContent",
+    "CommitResult",
+    "SCMContentsProvider",
     "SCMProviderError",
     "RateLimitError",
     "ProviderPermissionError",
     "ResourceNotFoundError",
     "TransientProviderError",
+    "CommitConflictError",
     "category_for_error",
 ]

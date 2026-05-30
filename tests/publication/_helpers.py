@@ -16,6 +16,12 @@ from living_adr.core.approval import ApprovedReviewDecision
 from living_adr.core.config import PublicationPolicy, RepositoryConfig
 from living_adr.core.graph.approval_bound_mutation import upsert_fingerprint
 from living_adr.core.models import RepositoryIdentity
+from living_adr.core.scm import (
+    CommitConflictError,
+    CommitResult,
+    FileContent,
+    RepositoryFile,
+)
 
 
 def build_repo(repo: str = "living-adr") -> RepositoryIdentity:
@@ -130,3 +136,66 @@ class SequentialIds:
     def __call__(self) -> str:
         self._n += 1
         return f"{self._prefix}-{self._n}"
+
+
+class FakeSCMContents:
+    """In-memory SCM contents port for committer tests (no network, NFR-2).
+
+    Models a single repository directory as a ``{path: text}`` map. ``conflicts``
+    raises :class:`CommitConflictError` on the first N ``create_file`` calls so
+    bounded refresh-and-retry can be exercised deterministically.
+    """
+
+    def __init__(
+        self,
+        files: dict[str, str] | None = None,
+        *,
+        conflicts: int = 0,
+    ) -> None:
+        self._files: dict[str, str] = dict(files or {})
+        self._conflicts = conflicts
+        self.create_calls: list[str] = []
+
+    def list_directory(
+        self, repository, branch: str, directory: str  # noqa: ANN001
+    ) -> tuple[RepositoryFile, ...]:
+        prefix = directory.rstrip("/") + "/"
+        out: list[RepositoryFile] = []
+        for path in self._files:
+            if path.startswith(prefix) and "/" not in path[len(prefix) :]:
+                name = path[len(prefix) :]
+                out.append(
+                    RepositoryFile(
+                        name=name, path=path, sha=f"sha-{name}", type="file"
+                    )
+                )
+        return tuple(sorted(out, key=lambda f: f.name))
+
+    def read_file(
+        self, repository, branch: str, path: str  # noqa: ANN001
+    ) -> FileContent | None:
+        if path not in self._files:
+            return None
+        return FileContent(path=path, text=self._files[path], sha=f"sha-{path}")
+
+    def create_file(
+        self,
+        repository,  # noqa: ANN001
+        branch: str,
+        path: str,
+        content: str,
+        message: str,
+        *,
+        sha: str | None = None,
+    ) -> CommitResult:
+        self.create_calls.append(path)
+        if self._conflicts > 0:
+            self._conflicts -= 1
+            raise CommitConflictError("branch head moved")
+        self._files[path] = content
+        return CommitResult(
+            commit_sha=f"commit-{len(self._files)}",
+            path=path,
+            content_sha=f"blob-{path}",
+            created=True,
+        )

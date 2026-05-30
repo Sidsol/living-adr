@@ -42,11 +42,13 @@ from living_adr.core.config import RepositoryConfig
 from living_adr.core.graph.approval_bound_mutation import upsert_fingerprint
 from living_adr.core.observability import NoOpObservability, Observability
 from living_adr.core.repository import RepositoryIdentity
+from living_adr.core.scm import CommitConflictError, SCMContentsProvider
 from living_adr.publication.models import (
     DEFAULT_ADR_PATH_TEMPLATE,
     ADRPublicationRequest,
     ADRPublicationResult,
     ADRPublicationTarget,
+    PublicationConflictExhaustedError,
     PublicationNotAuthorizedError,
     PublicationRecord,
     PublicationStatus,
@@ -54,7 +56,14 @@ from living_adr.publication.models import (
     adr_directory,
     publication_fingerprint,
 )
+from living_adr.publication.numbering import (
+    embed_decision_marker,
+    find_file_with_decision_marker,
+    next_adr_number,
+    render_adr_path,
+)
 from living_adr.publication.repository import PublicationRecordRepository
+from living_adr.publication.slugging import slugify
 
 Clock = Callable[[], datetime]
 IdProvider = Callable[[], str]
@@ -134,6 +143,111 @@ class PublicationCommitter(Protocol):
         target: ADRPublicationTarget,
         authorization: AuthorizedPublication,
     ) -> CommitOutcome: ...
+
+
+class SCMContentsPublicationCommitter:
+    """GitHub-/provider-neutral committer over the SCM contents port (S011-04).
+
+    Lists the configured ADR directory, detects an already-published file by its
+    ``livingadr_decision_id`` marker (FR-10 recovery → no double write), allocates
+    the next zero-padded number (FR-7), renders the path from the configured
+    template (FR-5), embeds the marker, and commits the approved Markdown. A moved
+    branch head surfaces as :class:`CommitConflictError`; the committer refreshes
+    the listing and retries within ``max_attempts`` before dead-lettering.
+    """
+
+    def __init__(
+        self,
+        contents: SCMContentsProvider,
+        *,
+        max_attempts: int = 3,
+    ) -> None:
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be >= 1")
+        self._contents = contents
+        self._max_attempts = max_attempts
+
+    def commit(
+        self,
+        request: ADRPublicationRequest,
+        target: ADRPublicationTarget,
+        authorization: AuthorizedPublication,
+    ) -> CommitOutcome:
+        repository = request.repository
+        adr = request.adr
+        decision_id = authorization.decision.decision_id
+        markdown = embed_decision_marker(adr.markdown, decision_id)
+
+        last_conflict: CommitConflictError | None = None
+        for _ in range(self._max_attempts):
+            files = self._contents.list_directory(
+                repository, target.branch, target.directory
+            )
+
+            # Recovery/idempotency: if a file already carries this decision's
+            # marker, return it instead of committing a duplicate (FR-10).
+            existing = self._find_existing_marker(
+                repository, target, files, decision_id
+            )
+            if existing is not None:
+                return CommitOutcome(
+                    target_path=existing.path,
+                    commit_sha=existing.sha or "existing",
+                    created=False,
+                )
+
+            number = next_adr_number(f.name for f in files)
+            slug = slugify(adr.title, fallback_id=adr.adr_id)
+            path = render_adr_path(
+                target.path_template,
+                number,
+                slug,
+                padding_width=target.padding_width,
+            )
+            message = (
+                f"docs(adr): publish ADR {number:0{target.padding_width}d} {slug}"
+            )
+            try:
+                result = self._contents.create_file(
+                    repository, target.branch, path, markdown, message
+                )
+            except CommitConflictError as exc:
+                last_conflict = exc
+                continue
+            return CommitOutcome(
+                target_path=result.path,
+                commit_sha=result.commit_sha,
+                created=result.created,
+            )
+
+        raise PublicationConflictExhaustedError(
+            f"exhausted {self._max_attempts} publish attempts for "
+            f"decision {decision_id} after branch-head conflicts"
+        ) from last_conflict
+
+    def _find_existing_marker(
+        self,
+        repository: RepositoryIdentity,
+        target: ADRPublicationTarget,
+        files: tuple,
+        decision_id: str,
+    ):
+        contents: dict[str, str] = {}
+        for entry in files:
+            if getattr(entry, "type", "file") != "file":
+                continue
+            if not entry.name.endswith(".md"):
+                continue
+            file = self._contents.read_file(repository, target.branch, entry.path)
+            if file is not None:
+                contents[entry.path] = file.text
+        match = find_file_with_decision_marker(contents, decision_id)
+        if match is None:
+            return None
+        for entry in files:
+            if entry.path == match:
+                return entry
+        return None
 
 
 class ADRPublicationService:
@@ -232,8 +346,24 @@ class ADRPublicationService:
         )
         self._records.reserve(intent)
 
-        # 5. Commit through the SCM provider seam.
-        outcome = self._committer.commit(request, request.target, authorization)
+        # 5. Commit through the SCM provider seam. Conflict exhaustion
+        #    dead-letters the durable record (recoverable later) and re-raises.
+        try:
+            outcome = self._committer.commit(request, request.target, authorization)
+        except PublicationConflictExhaustedError:
+            dead = intent.model_copy(
+                update={
+                    "status": PublicationStatus.DEAD_LETTERED,
+                    "detail": "commit conflicts exhausted retry budget",
+                }
+            )
+            self._records.finalize(dead)
+            self._link_audit(repository, authorization.decision, dead)
+            self._obs.record_event(
+                "publication.dead_lettered",
+                {"repository": repository.key, "decision_id": decision.decision_id},
+            )
+            raise
 
         # 6. Finalise the durable record and link the audit by decision_id.
         committed = intent.model_copy(
@@ -325,5 +455,6 @@ __all__ = [
     "AuthorizedPublication",
     "CommitOutcome",
     "PublicationCommitter",
+    "SCMContentsPublicationCommitter",
     "ADRPublicationService",
 ]

@@ -11,18 +11,23 @@ its diff are fetched. No broad history, commit, or contents mining.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from living_adr.core.repository import RepositoryIdentity
 from living_adr.core.scm import (
     ChangedFileMetadata,
+    CommitConflictError,
+    CommitResult,
     DiffEvidence,
+    FileContent,
     InstallationStatus,
     InstallationVerification,
     ProviderPermissionError,
     PullRequestMetadata,
     RateLimitError,
+    RepositoryFile,
     ResourceNotFoundError,
     SCMFetchHandle,
     SCMProviderError,
@@ -48,6 +53,8 @@ class GitHubClient(Protocol):
     def get_json(self, path: str) -> object: ...
 
     def get_diff(self, path: str) -> str: ...
+
+    def put_json(self, path: str, payload: dict) -> object: ...
 
 
 def _map_api_error(error: GitHubApiError) -> SCMProviderError:
@@ -240,6 +247,104 @@ class GitHubProvider:
         return (
             str(repo_id) if repo_id is not None else None,
             str(default_branch) if default_branch is not None else None,
+        )
+
+
+    # --- Contents port (feature 011 publish-back) -----------------------
+
+    def _contents_path(
+        self, repository: RepositoryIdentity, path: str
+    ) -> str:
+        return f"/repos/{repository.owner}/{repository.repo}/contents/{path}"
+
+    def list_directory(
+        self, repository: RepositoryIdentity, branch: str, directory: str
+    ) -> tuple[RepositoryFile, ...]:
+        url = f"{self._contents_path(repository, directory)}?ref={branch}"
+        try:
+            data = self._client.get_json(url)
+        except GitHubApiError as exc:
+            if exc.status == 404:
+                # Directory does not exist yet → treat as empty (first ADR).
+                return ()
+            raise _map_api_error(exc) from exc
+        if not isinstance(data, Sequence):
+            raise TransientProviderError("unexpected directory payload shape")
+        files: list[RepositoryFile] = []
+        for entry in data:
+            if not isinstance(entry, Mapping):
+                continue
+            files.append(
+                RepositoryFile(
+                    name=str(entry.get("name") or ""),
+                    path=str(entry.get("path") or ""),
+                    sha=entry.get("sha"),
+                    type=str(entry.get("type") or "file"),
+                )
+            )
+        return tuple(files)
+
+    def read_file(
+        self, repository: RepositoryIdentity, branch: str, path: str
+    ) -> FileContent | None:
+        url = f"{self._contents_path(repository, path)}?ref={branch}"
+        try:
+            data = self._client.get_json(url)
+        except GitHubApiError as exc:
+            if exc.status == 404:
+                return None
+            raise _map_api_error(exc) from exc
+        if not isinstance(data, Mapping):
+            raise TransientProviderError("unexpected file payload shape")
+        raw = data.get("content")
+        encoding = str(data.get("encoding") or "base64")
+        if not isinstance(raw, str):
+            text = ""
+        elif encoding == "base64":
+            text = base64.b64decode(raw).decode("utf-8")
+        else:
+            text = raw
+        return FileContent(
+            path=str(data.get("path") or path),
+            text=text,
+            sha=data.get("sha"),
+        )
+
+    def create_file(
+        self,
+        repository: RepositoryIdentity,
+        branch: str,
+        path: str,
+        content: str,
+        message: str,
+        *,
+        sha: str | None = None,
+    ) -> CommitResult:
+        payload: dict = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "branch": branch,
+            "path": path,
+        }
+        if sha is not None:
+            payload["sha"] = sha
+        try:
+            data = self._client.put_json(self._contents_path(repository, path), payload)
+        except GitHubApiError as exc:
+            if exc.status in (409, 422):
+                raise CommitConflictError(str(exc)) from exc
+            raise _map_api_error(exc) from exc
+        if not isinstance(data, Mapping):
+            raise TransientProviderError("unexpected commit payload shape")
+        commit = data.get("commit") if isinstance(data.get("commit"), Mapping) else {}
+        content_obj = (
+            data.get("content") if isinstance(data.get("content"), Mapping) else {}
+        )
+        return CommitResult(
+            commit_sha=str(commit.get("sha") or ""),
+            path=str(content_obj.get("path") or path),
+            content_sha=content_obj.get("sha"),
+            created=sha is None,
         )
 
 
