@@ -257,3 +257,75 @@ def test_service_dead_letters_when_conflicts_exhaust() -> None:
     persisted = records.get(decision.decision_id)
     assert persisted is not None
     assert persisted.status is PublicationStatus.DEAD_LETTERED
+
+
+# --- observability: metadata-only emission (S011-05) -----------------------
+
+
+class RecordingObservability:
+    """Captures (name, metadata) event tuples for assertion."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def record_event(self, name: str, metadata=None) -> None:  # noqa: ANN001
+        self.events.append((name, dict(metadata or {})))
+
+    def increment_counter(self, name, value=1, metadata=None) -> None:  # noqa: ANN001
+        return None
+
+    def start_span(self, name, metadata=None):  # noqa: ANN001
+        raise NotImplementedError
+
+
+def _service_with_obs(audit, obs, contents=None):  # noqa: ANN001
+    return ADRPublicationService(
+        audit=audit,
+        records=InMemoryPublicationRepository(),
+        committer=SCMContentsPublicationCommitter(contents or FakeSCMContents()),
+        observability=obs,
+        clock=FixedClock(),
+        id_provider=SequentialIds("pub-audit"),
+    )
+
+
+def test_committed_emits_metadata_only_event_without_raw_body() -> None:
+    repo = build_repo()
+    adr = build_adr(repo)
+    decision = build_decision(repo, adr)
+    audit = InMemoryApprovalAuditRepository()
+    _seed_consumed_decision(audit, repo, adr, decision)
+    obs = RecordingObservability()
+    service = _service_with_obs(audit, obs)
+
+    service.publish(_request(repo, adr, decision))
+
+    committed = [m for name, m in obs.events if name == "publication.committed"]
+    assert len(committed) == 1
+    meta = committed[0]
+    assert meta["repository"] == repo.key
+    assert meta["decision_id"] == decision.decision_id
+    assert meta["target_path"] == "docs/adr/0001-adopt-durable-approval-audit.md"
+    # No raw ADR body / markdown leaks through observability (NFR-4/NFR-6).
+    blob = " ".join(str(v) for v in meta.values())
+    assert adr.markdown not in blob
+    assert "## Decision" not in blob
+
+
+def test_skipped_by_policy_emits_metadata_only_event() -> None:
+    repo = build_repo()
+    adr = build_adr(repo)
+    decision = build_decision(repo, adr)
+    audit = InMemoryApprovalAuditRepository()
+    _seed_consumed_decision(audit, repo, adr, decision)
+    obs = RecordingObservability()
+    service = _service_with_obs(audit, obs)
+
+    service.publish(
+        _request(repo, adr, decision, policy=PublicationPolicy.LIVINGADR_ONLY)
+    )
+
+    names = [name for name, _ in obs.events]
+    assert "publication.skipped_by_policy" in names
+    assert "publication.committed" not in names
+
