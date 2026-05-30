@@ -8,6 +8,7 @@ this file (they share the validation/diagnostic surface).
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,13 +17,37 @@ from living_adr.core.adr import ADRRecord, ADRStatus
 from living_adr.core.approval import ApprovedReviewDecision
 from living_adr.core.graph.approval_bound_mutation import migrate_fingerprint
 from living_adr.core.graph.models import (
+    GraphEdge,
     MigrationResult,
+    NodeId,
+    RelationshipType,
     SchemaVersion,
     UnsupportedRelationshipError,
 )
 from living_adr.core.repository import RepositoryIdentity
 from living_adr.graph import GraphPersistenceConfig, LlamaIndexPropertyGraphAdapter
+from living_adr.graph.llamaindex_mapping import (
+    ADR_ID_KEY,
+    SCOPE_KEY_PROP,
+    MappingValidationError,
+    adr_to_entity_node,
+    edge_to_relation,
+    validate_extracted_triple,
+)
 from living_adr.graph.persistence import graph_meta_path
+from living_adr.graph.provenance import (
+    PROV_DECISION_ID,
+    PROV_SCOPE_KEY,
+    EntityProvenance,
+    ExtractionMethod,
+    MissingProvenanceError,
+    ProvenanceRepositoryMismatchError,
+    assert_complete,
+    assert_scope,
+    provenance_from_properties,
+    provenance_to_properties,
+    scope_key,
+)
 from living_adr.graph.schema import (
     ADAPTER_SCHEMA_VERSION,
     SchemaMetadataError,
@@ -60,8 +85,6 @@ def _adr(repository: RepositoryIdentity, adr_id: str = "adr-1") -> ADRRecord:
 def _migrate_decision(
     repository: RepositoryIdentity, target: SchemaVersion
 ) -> ApprovedReviewDecision:
-    from datetime import UTC, datetime
-
     return ApprovedReviewDecision(
         repository=repository,
         decision_id="decision-migrate",
@@ -166,3 +189,92 @@ def test_validate_entity_label_accepts_known_and_rejects_unknown() -> None:
     assert validate_entity_label("adr") == "adr"
     with pytest.raises(UnsupportedEntityLabelError):
         validate_entity_label("not-a-real-label")
+
+
+# ----------------------------------------------------- slice 3: provenance
+
+
+def _prov(repository: RepositoryIdentity, adr_id: str = "adr-1") -> EntityProvenance:
+    return EntityProvenance(
+        repository=repository,
+        source_adr_id=adr_id,
+        decision_id=f"decision-{adr_id}",
+        extraction_method=ExtractionMethod.DETERMINISTIC_ADR_PROJECTION,
+        extracted_at=datetime.now(UTC),
+        schema_version=ADAPTER_SCHEMA_VERSION,
+        evidence_id="ev-1",
+    )
+
+
+def test_provenance_roundtrips_through_properties() -> None:
+    repo = _repo()
+    prov = _prov(repo)
+    props = provenance_to_properties(prov)
+    assert props[PROV_SCOPE_KEY] == scope_key(repo)
+    restored = provenance_from_properties(repo, props)
+    assert restored.source_adr_id == prov.source_adr_id
+    assert restored.decision_id == prov.decision_id
+    assert restored.extraction_method == prov.extraction_method
+    assert restored.schema_version == prov.schema_version
+
+
+def test_incomplete_provenance_is_rejected() -> None:
+    repo = _repo()
+    props = provenance_to_properties(_prov(repo))
+    del props[PROV_DECISION_ID]
+    with pytest.raises(MissingProvenanceError):
+        assert_complete(props)
+
+
+def test_empty_provenance_value_is_rejected() -> None:
+    repo = _repo()
+    props = provenance_to_properties(_prov(repo))
+    props[PROV_DECISION_ID] = "   "
+    with pytest.raises(MissingProvenanceError):
+        assert_complete(props)
+
+
+def test_provenance_repository_mismatch_detected() -> None:
+    repo_a = _repo("alpha", "1")
+    repo_b = _repo("beta", "2")
+    props = provenance_to_properties(_prov(repo_a))
+    assert_scope(repo_a, props)  # matching scope is fine
+    with pytest.raises(ProvenanceRepositoryMismatchError):
+        assert_scope(repo_b, props)
+
+
+def test_adr_entity_node_carries_provenance_and_scope() -> None:
+    repo = _repo()
+    adr = _adr(repo)
+    node = adr_to_entity_node(repo, adr, _prov(repo, adr.adr_id))
+    assert node.properties[SCOPE_KEY_PROP] == scope_key(repo)
+    assert node.properties[ADR_ID_KEY] == adr.adr_id
+    # Provenance must be present so the node can be cited/audited.
+    assert_complete(node.properties)
+
+
+def test_edge_relation_uses_validated_label_and_provenance() -> None:
+    repo = _repo()
+    from_node = NodeId(repository=repo, value="adr:adr-1")
+    to_node = NodeId(repository=repo, value="component:payments")
+    edge = GraphEdge(
+        repository=repo,
+        from_node=from_node,
+        to_node=to_node,
+        relationship=RelationshipType.ADDRESSES_COMPONENT,
+    )
+    relation = edge_to_relation(edge, _prov(repo))
+    assert relation.label == "addresses_component"
+    assert relation.source_id == "adr:adr-1"
+    assert_complete(relation.properties)
+
+
+def test_unsupported_extracted_triple_is_quarantined() -> None:
+    # A made-up relationship label from an unconstrained extractor is rejected.
+    with pytest.raises(MappingValidationError):
+        validate_extracted_triple("adr", "totally-made-up", "component")
+    # A made-up entity label is rejected too.
+    with pytest.raises(MappingValidationError):
+        validate_extracted_triple("adr", "addresses_component", "not-a-label")
+    # A fully valid triple maps cleanly.
+    validate_extracted_triple("adr", "addresses_component", "component")
