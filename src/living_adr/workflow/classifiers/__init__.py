@@ -8,6 +8,11 @@ facade are part of the contract.
 
 from __future__ import annotations
 
+from living_adr.workflow.classifiers.confidence import (
+    DEFAULT_THRESHOLD,
+    POLICY_ID,
+    ConfidencePolicy,
+)
 from living_adr.workflow.classifiers.inputs import (
     ChangedFileEvidence,
     ClassifierInput,
@@ -22,4 +27,7 @@ __all__ = [
     "ClassifierInputError",
     "UncertaintyReason",
     "build_classifier_input",
+    "ConfidencePolicy",
+    "POLICY_ID",
+    "DEFAULT_THRESHOLD",
 ]
