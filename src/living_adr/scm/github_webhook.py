@@ -18,12 +18,20 @@ import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from urllib.parse import urlparse
 
 from living_adr.core.config import LivingADRConfig, RepositoryConfig
 from living_adr.core.ingestion import IngestionErrorCategory
+from living_adr.core.models import SCMEvent
 from living_adr.core.repository import RepositoryIdentity
+from living_adr.core.scm import (
+    SCMEventEnvelope,
+    SCMFetchHandle,
+    SCMProviderName,
+    build_normalized_pr_key,
+)
 
 SIGNATURE_HEADER = "X-Hub-Signature-256"
 DELIVERY_HEADER = "X-GitHub-Delivery"
@@ -296,4 +304,63 @@ def parse_and_filter(
         payload=extracted,
         repository=identity,
         repo_config=repo_config,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Slice 3: normalize an accepted GitHub payload into the canonical SCMEvent.
+#
+# The canonical SCMEvent (feature 001) is emitted unchanged; richer normalized
+# context (normalized PR key, provider-neutral fetch handle, opaque provider
+# metadata) is carried by the wrapping SCMEventEnvelope. Changed files / diff are
+# evidence and are fetched later (slice 4), so they are intentionally absent here.
+# --------------------------------------------------------------------------- #
+
+
+def _parse_merged_at(value: str | None) -> datetime:
+    if not value:
+        return datetime.now(UTC)
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def normalize_to_scm_event(
+    delivery_id: str,
+    repository: RepositoryIdentity,
+    payload: GitHubPullRequestPayload,
+) -> SCMEventEnvelope:
+    """Map an accepted, filtered GitHub merged-PR into a canonical event envelope."""
+
+    event = SCMEvent(
+        repository=repository,
+        delivery_id=delivery_id,
+        provider=SCMProviderName.GITHUB.value,
+        event_type="merged_pr",
+        pr_number=payload.pr_number,
+        pr_title=payload.pr_title,
+        merged_at=_parse_merged_at(payload.merged_at),
+        diff_summary="",
+        changed_files=(),
+    )
+    normalized_pr_key = build_normalized_pr_key(
+        SCMProviderName.GITHUB,
+        repository,
+        payload.pr_number,
+        payload.merge_commit_sha,
+    )
+    fetch_handle = SCMFetchHandle(
+        installation_id=payload.installation_id or "",
+        pr_number=payload.pr_number,
+        head_sha=payload.head_sha,
+        head_ref=payload.head_ref,
+        base_ref=payload.base_ref,
+        merge_commit_sha=payload.merge_commit_sha,
+    )
+    return SCMEventEnvelope(
+        event=event,
+        provider=SCMProviderName.GITHUB,
+        provider_event_type="pull_request.closed",
+        normalized_pr_key=normalized_pr_key,
+        fetch_handle=fetch_handle,
+        sender=payload.sender,
+        provider_metadata={},
     )

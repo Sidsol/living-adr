@@ -1,0 +1,209 @@
+"""Provider-neutral SCM contracts: events, fetch handles, provider port (003).
+
+These are the cross-feature seams established by feature 003 and reused by
+classifiers (004/005), publish-back (011), and onboarding (014). They are
+deliberately provider-neutral so a future Azure DevOps adapter maps into the same
+workflow-facing shape (architecture #service-boundaries, FM-24).
+
+Relationship to the canonical :class:`~living_adr.core.models.SCMEvent`
+----------------------------------------------------------------------
+Feature 001 established ``SCMEvent`` as the canonical normalized merged-PR event.
+Ingestion **emits that exact contract** — it is never redefined here. The richer
+normalization data that does not belong on the minimal event (the repository-
+scoped normalized PR key, provider-neutral fetch handles, opaque provider
+metadata) is carried by :class:`SCMEventEnvelope`, which *wraps* the canonical
+event. Changed-file/diff content is evidence, not part of the event, and lives in
+:class:`CandidateEvidence` produced after the provider fetch (slice 4).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from enum import StrEnum
+from typing import Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict
+
+from living_adr.core.ingestion import IngestionErrorCategory
+from living_adr.core.models import SCMEvent
+from living_adr.core.repository import RepositoryIdentity
+
+
+class SCMProviderName(StrEnum):
+    """Supported / planned SCM providers. GitHub is implemented; ADO is a seam."""
+
+    GITHUB = "github"
+    AZURE_DEVOPS = "azure_devops"
+
+
+def build_normalized_pr_key(
+    provider: SCMProviderName,
+    repository: RepositoryIdentity,
+    pr_number: int,
+    merge_commit_sha: str | None,
+) -> str:
+    """Repository-scoped, provider-neutral pull-request identity.
+
+    PR numbers collide across repositories/providers, so the key binds provider +
+    canonical repository key + PR number + merge commit SHA (architecture
+    #anti-patterns: never use PR number alone as an idempotency key).
+    """
+
+    sha = merge_commit_sha or "unknown"
+    return f"{provider.value}:{repository.key}:{pr_number}:{sha}"
+
+
+class SCMFetchHandle(BaseModel):
+    """Provider-neutral coordinates used to fetch PR metadata, files, and diff.
+
+    Carries no secrets: the ``installation_id`` is an opaque reference resolved to
+    credentials by the adapter, never a token.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    installation_id: str
+    pr_number: int
+    head_sha: str | None = None
+    head_ref: str | None = None
+    base_ref: str | None = None
+    merge_commit_sha: str | None = None
+
+
+class SCMEventEnvelope(BaseModel):
+    """Canonical :class:`SCMEvent` plus provider-neutral normalization context."""
+
+    model_config = ConfigDict(frozen=True)
+
+    event: SCMEvent
+    provider: SCMProviderName
+    provider_event_type: str
+    normalized_pr_key: str
+    fetch_handle: SCMFetchHandle
+    sender: str | None = None
+    # Opaque provider-specific data kept out of workflow-facing fields (FM-24).
+    provider_metadata: Mapping[str, str] = {}
+
+
+class PullRequestMetadata(BaseModel):
+    """Minimal PR metadata fetched through the provider (V1 classifier input)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    number: int
+    title: str
+    body: str
+    author: str | None
+    state: str
+    merged: bool
+    head_ref: str | None
+    base_ref: str | None
+    merge_commit_sha: str | None
+
+
+class ChangedFileMetadata(BaseModel):
+    """One changed file's metadata (filename + status + line deltas)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filename: str
+    status: str
+    additions: int = 0
+    deletions: int = 0
+
+
+class DiffEvidence(BaseModel):
+    """Diff handle/summary. Raw diff text is never exported to observability."""
+
+    model_config = ConfigDict(frozen=True)
+
+    diff_handle: str
+    summary: str
+    truncated: bool = False
+    byte_size: int | None = None
+
+
+class CandidateEvidence(BaseModel):
+    """Immutable evidence bundle for classifiers, linked to the source event.
+
+    Evidence is *not* approved rationale (architecture #anti-patterns); it is the
+    immutable PR/diff input a downstream classifier reasons over.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repository: RepositoryIdentity
+    source_delivery_id: str
+    normalized_pr_key: str
+    pr_number: int
+    pr_title: str
+    changed_files: tuple[ChangedFileMetadata, ...]
+    diff: DiffEvidence
+    provider: SCMProviderName
+    is_complete: bool = True
+
+
+@runtime_checkable
+class SCMProvider(Protocol):
+    """Provider-neutral port for fetching minimal PR metadata, files, and diff."""
+
+    def fetch_pull_request(
+        self, repository: RepositoryIdentity, handle: SCMFetchHandle
+    ) -> PullRequestMetadata: ...
+
+    def fetch_changed_files(
+        self, repository: RepositoryIdentity, handle: SCMFetchHandle
+    ) -> tuple[ChangedFileMetadata, ...]: ...
+
+    def fetch_diff(
+        self, repository: RepositoryIdentity, handle: SCMFetchHandle
+    ) -> DiffEvidence: ...
+
+
+class SCMProviderError(Exception):
+    """Base class for provider fetch failures, carrying an error category."""
+
+    category: IngestionErrorCategory = IngestionErrorCategory.UNKNOWN
+
+
+class RateLimitError(SCMProviderError):
+    category = IngestionErrorCategory.RATE_LIMITED
+
+
+class ProviderPermissionError(SCMProviderError):
+    category = IngestionErrorCategory.PERMISSION_DENIED
+
+
+class ResourceNotFoundError(SCMProviderError):
+    category = IngestionErrorCategory.RESOURCE_NOT_FOUND
+
+
+class TransientProviderError(SCMProviderError):
+    category = IngestionErrorCategory.TRANSIENT
+
+
+def category_for_error(error: Exception) -> IngestionErrorCategory:
+    """Map a provider exception to an ingestion error category."""
+
+    if isinstance(error, SCMProviderError):
+        return error.category
+    return IngestionErrorCategory.UNKNOWN
+
+
+__all__ = [
+    "SCMProviderName",
+    "build_normalized_pr_key",
+    "SCMFetchHandle",
+    "SCMEventEnvelope",
+    "PullRequestMetadata",
+    "ChangedFileMetadata",
+    "DiffEvidence",
+    "CandidateEvidence",
+    "SCMProvider",
+    "SCMProviderError",
+    "RateLimitError",
+    "ProviderPermissionError",
+    "ResourceNotFoundError",
+    "TransientProviderError",
+    "category_for_error",
+]

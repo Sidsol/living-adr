@@ -10,12 +10,28 @@ from living_adr.core.config import (
     PublicationPolicy,
     RepositoryConfig,
 )
+from living_adr.core.ingestion import (
+    DeliveryStatus,
+    IngestionDelivery,
+    IngestionErrorCategory,
+)
 from living_adr.core.observability import (
     NoOpObservability,
     Observability,
     ObservationSpan,
 )
 from living_adr.core.repository import RepositoryIdentity
+from living_adr.core.scm import (
+    CandidateEvidence,
+    ChangedFileMetadata,
+    DiffEvidence,
+    PullRequestMetadata,
+    SCMEventEnvelope,
+    SCMFetchHandle,
+    SCMProvider,
+    SCMProviderName,
+    build_normalized_pr_key,
+)
 
 __all__ = [
     "RepositoryIdentity",
@@ -25,4 +41,16 @@ __all__ = [
     "Observability",
     "NoOpObservability",
     "ObservationSpan",
+    "DeliveryStatus",
+    "IngestionDelivery",
+    "IngestionErrorCategory",
+    "SCMProviderName",
+    "SCMEventEnvelope",
+    "SCMFetchHandle",
+    "SCMProvider",
+    "PullRequestMetadata",
+    "ChangedFileMetadata",
+    "DiffEvidence",
+    "CandidateEvidence",
+    "build_normalized_pr_key",
 ]
