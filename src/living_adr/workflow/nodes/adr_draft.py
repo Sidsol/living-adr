@@ -41,6 +41,22 @@ from living_adr.core.structural_change import (
     ChangeEvidence,
     StructuralChange,
 )
+from living_adr.observability.drafting_events import (
+    DRAFTING_BUDGET_BLOCKED,
+    DRAFTING_COMPLETED,
+    DRAFTING_INVALID_OUTPUT,
+    DRAFTING_POLICY_BLOCKED,
+    DRAFTING_PROVIDER_ERROR,
+    DRAFTING_STARTED,
+    DRAFTING_SUCCEEDED,
+    budget_blocked_metadata,
+    completed_metadata,
+    invalid_output_metadata,
+    policy_blocked_metadata,
+    provider_error_metadata,
+    started_metadata,
+    succeeded_metadata,
+)
 from living_adr.workflow.drafting.context import (
     ContextQuery,
     PackagedContext,
@@ -299,6 +315,7 @@ class ClaudeADRDraftNode:
         self._resolver = resolver
         self._context_query = context_query
         self._observability = observability or NoOpObservability()
+        self._model_id = model_id
         self._service = DraftingService(
             claude_client=claude_client,
             estimator=estimator,
@@ -311,8 +328,97 @@ class ClaudeADRDraftNode:
         if inputs is None:
             return {"status": WorkflowStatus.NO_ADR_NEEDED}
 
+        repo_key = inputs.repository.key
+        change_id = inputs.change.id
+        event_key = state.normalized_event_key
+        self._observability.record_event(
+            DRAFTING_STARTED,
+            started_metadata(
+                repository_key=repo_key,
+                structural_change_id=change_id,
+                model_id=self._model_id,
+                normalized_event_key=event_key,
+            ),
+        )
+
         result = self._service.draft(inputs, context_query=self._context_query)
+        self._emit_outcome(repo_key, change_id, event_key, result)
+
+        self._observability.record_event(
+            DRAFTING_COMPLETED,
+            completed_metadata(
+                repository_key=repo_key,
+                structural_change_id=change_id,
+                result_type=result.outcome.value,
+                normalized_event_key=event_key,
+            ),
+        )
         return self._to_state_update(inputs, result)
+
+    def _emit_outcome(
+        self,
+        repo_key: str,
+        change_id: str,
+        event_key: str | None,
+        result: DraftingResult,
+    ) -> None:
+        """Emit the metadata-only event matching the typed outcome (US-7)."""
+
+        outcome = result.outcome
+        if outcome is DraftingOutcome.LLM_POLICY_DENIED:
+            self._observability.record_event(
+                DRAFTING_POLICY_BLOCKED,
+                policy_blocked_metadata(
+                    repository_key=repo_key,
+                    structural_change_id=change_id,
+                    reason=result.detail or "external_llm_denied",
+                    normalized_event_key=event_key,
+                ),
+            )
+        elif outcome is DraftingOutcome.BUDGET_EXCEEDED:
+            self._observability.record_event(
+                DRAFTING_BUDGET_BLOCKED,
+                budget_blocked_metadata(
+                    repository_key=repo_key,
+                    structural_change_id=change_id,
+                    normalized_event_key=event_key,
+                ),
+            )
+        elif outcome is DraftingOutcome.PROVIDER_ERROR:
+            self._observability.record_event(
+                DRAFTING_PROVIDER_ERROR,
+                provider_error_metadata(
+                    repository_key=repo_key,
+                    structural_change_id=change_id,
+                    model_id=result.model_id or self._model_id,
+                    error_class=result.error_class or "provider_error",
+                    normalized_event_key=event_key,
+                ),
+            )
+        elif outcome is DraftingOutcome.INVALID_OUTPUT:
+            self._observability.record_event(
+                DRAFTING_INVALID_OUTPUT,
+                invalid_output_metadata(
+                    repository_key=repo_key,
+                    structural_change_id=change_id,
+                    model_id=result.model_id or self._model_id,
+                    normalized_event_key=event_key,
+                ),
+            )
+        elif outcome is DraftingOutcome.DRAFTED and result.draft is not None:
+            self._observability.record_event(
+                DRAFTING_SUCCEEDED,
+                succeeded_metadata(
+                    repository_key=repo_key,
+                    structural_change_id=change_id,
+                    model_id=result.model_id or self._model_id,
+                    input_tokens=result.input_tokens,
+                    output_tokens=result.output_tokens,
+                    content_hash=result.draft.content_hash,
+                    citation_count=len(result.draft.citations),
+                    normalized_event_key=event_key,
+                ),
+            )
 
     def _to_state_update(
         self, inputs: DraftInputs, result: DraftingResult

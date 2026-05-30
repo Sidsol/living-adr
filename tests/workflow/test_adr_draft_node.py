@@ -162,13 +162,14 @@ def _state() -> WorkflowState:
 
 
 def _node(
-    *, inputs: DraftInputs | None, client=None, query=None, budget=None
+    *, inputs: DraftInputs | None, client=None, query=None, budget=None, obs=None
 ) -> ClaudeADRDraftNode:
     return ClaudeADRDraftNode(
         resolver=_StaticResolver(inputs),
         claude_client=client or FakeClaudeClient(response_text=_VALID_MARKDOWN),
         context_query=query if query is not None else _FakeQuery(),
         budget_config=budget,
+        observability=obs,
     )
 
 
@@ -258,3 +259,77 @@ def test_invalid_output_is_routed() -> None:
     update = node(_state())
     assert update["status"] is WorkflowStatus.FAILED
     assert update["error"].category == "invalid_output"
+
+
+class _RecordingObs:
+    """Metadata-only observability double that records emitted events."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def record_event(self, name, metadata=None):
+        self.events.append((name, dict(metadata or {})))
+
+    def increment_counter(self, name, value=1, metadata=None):
+        return None
+
+    def start_span(self, name, metadata=None):
+        from contextlib import nullcontext
+
+        return nullcontext()
+
+
+def test_happy_path_emits_started_succeeded_completed() -> None:
+    obs = _RecordingObs()
+    node = _node(inputs=_inputs(), obs=obs)
+    node(_state())
+
+    names = [name for name, _ in obs.events]
+    assert names == [
+        "adr_drafting.started",
+        "adr_drafting.succeeded",
+        "adr_drafting.completed",
+    ]
+    succeeded = dict(obs.events)["adr_drafting.succeeded"]
+    assert succeeded["result_type"] == "drafted"
+    assert succeeded["input_tokens"] >= 0
+    assert succeeded["content_hash"]
+    assert succeeded["citation_count"] == 2
+    completed = dict(obs.events)["adr_drafting.completed"]
+    assert completed["result_type"] == "drafted"
+
+
+def test_policy_denied_emits_policy_blocked_event() -> None:
+    obs = _RecordingObs()
+    node = _node(inputs=_inputs(allowed=False), obs=obs)
+    node(_state())
+
+    names = [name for name, _ in obs.events]
+    assert "adr_drafting.policy_blocked" in names
+    blocked = dict(obs.events)["adr_drafting.policy_blocked"]
+    assert blocked["policy_allowed"] is False
+    assert blocked["result_type"] == "llm_policy_denied"
+
+
+def test_provider_error_emits_error_class_only() -> None:
+    obs = _RecordingObs()
+    client = FakeClaudeClient(error=ClaudeProviderError("boom"))
+    node = _node(inputs=_inputs(), client=client, obs=obs)
+    node(_state())
+
+    blocked = dict(obs.events)["adr_drafting.provider_error"]
+    assert blocked["error_class"]
+    assert blocked["result_type"] == "provider_error"
+
+
+def test_emitted_events_never_carry_raw_payloads() -> None:
+    obs = _RecordingObs()
+    node = _node(inputs=_inputs(), obs=obs)
+    node(_state())
+
+    for _name, meta in obs.events:
+        serialized = " ".join(str(v) for v in meta.values())
+        assert "## Decision" not in serialized
+        assert "pyproject.toml" not in serialized
+        assert "requests==2.32.0" not in serialized
+
