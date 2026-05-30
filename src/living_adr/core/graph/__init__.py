@@ -21,10 +21,16 @@ from living_adr.core.graph.models import (
     WhyAnswer,
     utc_now,
 )
+from living_adr.core.graph.ports import (
+    ArchitectureContextQuery,
+    ArchitectureGraphStore,
+)
 
 __all__ = [
     "ADRPath",
     "ADRRef",
+    "ArchitectureContextQuery",
+    "ArchitectureGraphStore",
     "ConformanceReport",
     "GraphEdge",
     "GraphSnapshotRef",
