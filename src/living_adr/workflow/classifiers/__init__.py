@@ -1,0 +1,25 @@
+"""Feature 005 schema/API contract change classifiers.
+
+Stable workflow-facing surface for feature 015 (workflow orchestration) and
+feature 008 (ADR drafting). Detector rule tables are intentionally *not* exported
+— only the input adapter, the confidence policy, and (after slice 6) the service
+facade are part of the contract.
+"""
+
+from __future__ import annotations
+
+from living_adr.workflow.classifiers.inputs import (
+    ChangedFileEvidence,
+    ClassifierInput,
+    ClassifierInputError,
+    UncertaintyReason,
+    build_classifier_input,
+)
+
+__all__ = [
+    "ChangedFileEvidence",
+    "ClassifierInput",
+    "ClassifierInputError",
+    "UncertaintyReason",
+    "build_classifier_input",
+]
