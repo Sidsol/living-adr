@@ -1,18 +1,53 @@
-# Copy this file to living-adr.config.yaml and edit for your deployment.
+# living-adr.config.example.yaml
+#
+# Copy this file to living-adr.config.yaml (the default path, resolved relative
+# to the process working directory) and edit it for your deployment, or point the
+# LIVING_ADR_CONFIG environment variable at an alternate location.
+#
+# -----------------------------------------------------------------------------
+# RESTART REQUIRED -- there is NO hot reload in the PoC.
+# Configuration is read once and snapshotted at process startup. After editing
+# this file you MUST restart BOTH deployables for changes to take effect:
+#   * the workflow service  (living-adr-workflow)
+#   * the MCP context server (living-adr-mcp)
+# No file watcher, background reload task, or per-request re-parse is involved.
+# -----------------------------------------------------------------------------
+#
+# This file contains NO secrets. GitHub App private keys, access tokens, and API
+# keys live in the environment / vault -- never in repository configuration.
+#
+# The one-repository PoC case is just a list of length one; N >= 1 repositories
+# are handled uniformly (there is no single-repo special case).
+
 repositories:
-  - repository_identity:
-      # RepositoryIdentity: provider plus stable repository coordinates.
-      provider: github
-      owner: "<github-owner>"
-      name: "<github-repo>"
-    github_app:
-      # GitHub App installation id authorized for this repository.
-      installation_id: "<installation-id>"
-    adr_publication:
-      # policy enum: draft_only, pull_request, or direct_commit.
-      policy: pull_request
-      branch: main
-      path: docs/adr
-    llm:
-      # false means external LLM calls are disabled for this deployment.
-      external_llm_allowed: false
+  - identity:
+      host: github.com          # SCM host (provider-neutral coordinate)
+      owner: example-org        # repository owner / organization
+      repo: example-repo        # repository name
+      repo_id: "100200300"      # stable provider repository id (string)
+    github_app_installation_id: "12345678"   # GitHub App installation id (NOT a secret)
+    default_branch: main
+    # adr_publication_policy is one of:
+    #   livingadr_only                    -- store approved ADRs in LivingADR only
+    #   publish_to_github                 -- publish ADRs back to the GitHub repo
+    #   publish_to_github_and_livingadr   -- both of the above
+    adr_publication_policy: livingadr_only
+    # external_llm_allowed MUST be explicit. false denies all external LLM
+    # (e.g. Claude) egress for this repository; it is never inferred.
+    external_llm_allowed: false
+
+  # Example of a GitHub publish-back repository. Publish-to-GitHub policies
+  # require a target branch and a SAFE, RELATIVE ADR path template (no leading
+  # slash, no '..' traversal, no drive letters, no backslashes):
+  #
+  # - identity:
+  #     host: github.com
+  #     owner: example-org
+  #     repo: another-repo
+  #     repo_id: "100200301"
+  #   github_app_installation_id: "12345679"
+  #   default_branch: main
+  #   adr_publication_policy: publish_to_github_and_livingadr
+  #   adr_target_branch: main
+  #   adr_path_template: "docs/adr/{number}-{slug}.md"
+  #   external_llm_allowed: true
