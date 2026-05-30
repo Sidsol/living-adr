@@ -15,8 +15,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
+from urllib.parse import urlparse
+
+from living_adr.core.config import LivingADRConfig, RepositoryConfig
+from living_adr.core.ingestion import IngestionErrorCategory
+from living_adr.core.repository import RepositoryIdentity
 
 SIGNATURE_HEADER = "X-Hub-Signature-256"
 DELIVERY_HEADER = "X-GitHub-Delivery"
@@ -92,4 +99,201 @@ def extract_headers(headers: Mapping[str, str]) -> WebhookHeaders:
         delivery_id=delivery_id,
         event_name=event_name,
         signature=signature,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Slice 2: payload parsing, merged-PR filtering, repository resolution.
+#
+# GitHub-specific payload traversal is confined to this adapter module. Workflow
+# code consumes only the provider-neutral ``GitHubPullRequestPayload`` extract and
+# the resolved ``RepositoryIdentity``/``RepositoryConfig`` — never the raw dict.
+# --------------------------------------------------------------------------- #
+
+PULL_REQUEST_EVENT = "pull_request"
+_DEFAULT_HOST = "github.com"
+
+
+class FilterDecision(StrEnum):
+    """Outcome of filtering a verified webhook payload."""
+
+    ACCEPT = "accept"
+    SKIP = "skip"
+    REJECT = "reject"
+
+
+@dataclass(frozen=True)
+class GitHubPullRequestPayload:
+    """Provider-neutral extract of the GitHub merged-PR fields we depend on.
+
+    Provider-specific taxonomy stays here in the adapter; downstream
+    normalization (slice 3) maps this into the canonical ``SCMEvent``.
+    """
+
+    pr_number: int
+    pr_title: str
+    pr_body: str
+    merged_at: str | None
+    merge_commit_sha: str | None
+    head_ref: str | None
+    head_sha: str | None
+    base_ref: str | None
+    sender: str | None
+    installation_id: str | None
+
+
+@dataclass(frozen=True)
+class FilterResult:
+    """Decision plus the data needed to persist state and normalize the event."""
+
+    decision: FilterDecision
+    error_category: IngestionErrorCategory
+    payload: GitHubPullRequestPayload | None = None
+    repository: RepositoryIdentity | None = None
+    repo_config: RepositoryConfig | None = None
+    detail: str | None = None
+
+
+def _reject(category: IngestionErrorCategory, detail: str) -> FilterResult:
+    return FilterResult(
+        decision=FilterDecision.REJECT,
+        error_category=category,
+        detail=detail,
+    )
+
+
+def _skip(category: IngestionErrorCategory, detail: str) -> FilterResult:
+    return FilterResult(
+        decision=FilterDecision.SKIP,
+        error_category=category,
+        detail=detail,
+    )
+
+
+def _resolve_identity(repo_obj: Mapping[str, object]) -> RepositoryIdentity | None:
+    """Build a provider-neutral identity from a GitHub ``repository`` object."""
+
+    full_name = repo_obj.get("full_name")
+    owner_obj = repo_obj.get("owner") or {}
+    owner = owner_obj.get("login") if isinstance(owner_obj, Mapping) else None
+    name = repo_obj.get("name")
+    repo_id = repo_obj.get("id")
+    html_url = repo_obj.get("html_url")
+
+    if owner is None and isinstance(full_name, str) and "/" in full_name:
+        owner, name = full_name.split("/", 1)
+
+    host = _DEFAULT_HOST
+    if isinstance(html_url, str) and html_url:
+        parsed_host = urlparse(html_url).hostname
+        if parsed_host:
+            host = parsed_host
+
+    if not owner or not name or repo_id is None:
+        return None
+    try:
+        return RepositoryIdentity(
+            host=host,
+            owner=str(owner),
+            repo=str(name),
+            repo_id=str(repo_id),
+        )
+    except ValueError:
+        return None
+
+
+def parse_and_filter(
+    raw_body: bytes,
+    event_name: str,
+    config: LivingADRConfig,
+) -> FilterResult:
+    """Parse a *verified* payload and decide accept/skip/reject.
+
+    Must only be called after :func:`verify_signature` has succeeded.
+    """
+
+    if event_name != PULL_REQUEST_EVENT:
+        return _skip(
+            IngestionErrorCategory.NOT_PULL_REQUEST,
+            f"event {event_name!r} is not a pull_request",
+        )
+
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, ValueError):
+        return _reject(IngestionErrorCategory.MALFORMED_PAYLOAD, "invalid JSON body")
+
+    if not isinstance(payload, Mapping):
+        return _reject(
+            IngestionErrorCategory.MALFORMED_PAYLOAD, "payload is not an object"
+        )
+
+    pull_request = payload.get("pull_request")
+    repository = payload.get("repository")
+    action = payload.get("action")
+    if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
+        return _reject(
+            IngestionErrorCategory.MALFORMED_PAYLOAD,
+            "missing pull_request or repository object",
+        )
+
+    merged = bool(pull_request.get("merged"))
+    if action != "closed" or not merged:
+        return _skip(
+            IngestionErrorCategory.NOT_MERGED,
+            f"action={action!r} merged={merged} is not a merged PR",
+        )
+
+    identity = _resolve_identity(repository)
+    if identity is None:
+        return _reject(
+            IngestionErrorCategory.MALFORMED_PAYLOAD,
+            "could not resolve repository identity",
+        )
+
+    repo_config = config.get(identity.key)
+    if repo_config is None:
+        return FilterResult(
+            decision=FilterDecision.REJECT,
+            error_category=IngestionErrorCategory.UNCONFIGURED_REPOSITORY,
+            repository=identity,
+            detail=f"repository {identity.key} is not configured",
+        )
+
+    head = pull_request.get("head") or {}
+    base = pull_request.get("base") or {}
+    sender_obj = payload.get("sender") or {}
+    installation_obj = payload.get("installation") or {}
+    # Config is the source of truth for the installation id used to authenticate;
+    # fall back to the payload-declared installation only if config omits it.
+    installation_id = (
+        repo_config.github_app_installation_id
+        or (
+            str(installation_obj.get("id"))
+            if isinstance(installation_obj, Mapping)
+            and installation_obj.get("id") is not None
+            else None
+        )
+    )
+
+    extracted = GitHubPullRequestPayload(
+        pr_number=int(pull_request.get("number")),
+        pr_title=str(pull_request.get("title") or ""),
+        pr_body=str(pull_request.get("body") or ""),
+        merged_at=pull_request.get("merged_at"),
+        merge_commit_sha=pull_request.get("merge_commit_sha"),
+        head_ref=head.get("ref") if isinstance(head, Mapping) else None,
+        head_sha=head.get("sha") if isinstance(head, Mapping) else None,
+        base_ref=base.get("ref") if isinstance(base, Mapping) else None,
+        sender=(
+            sender_obj.get("login") if isinstance(sender_obj, Mapping) else None
+        ),
+        installation_id=installation_id,
+    )
+    return FilterResult(
+        decision=FilterDecision.ACCEPT,
+        error_category=IngestionErrorCategory.NONE,
+        payload=extracted,
+        repository=identity,
+        repo_config=repo_config,
     )
