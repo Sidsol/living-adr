@@ -54,6 +54,7 @@ from living_adr.approval.models import (
     TargetMutationMismatchError,
 )
 from living_adr.approval.mutation_service import (
+    AuthoritativeMutationService,
     AuthorizedMutationResult,
     DurableApprovalBoundMutationService,
 )
@@ -96,6 +97,7 @@ __all__ = [
     "validate_for_mutation",
     "DurableApprovalBoundMutationService",
     "AuthorizedMutationResult",
+    "AuthoritativeMutationService",
     "DecisionAuditTrail",
     "DecisionMutationLink",
     "build_decision_audit_trail",

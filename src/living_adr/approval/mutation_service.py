@@ -28,6 +28,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol, runtime_checkable
 
 from living_adr.approval.models import (
     DEFAULT_DECISION_TTL,
@@ -69,6 +70,31 @@ class AuthorizedMutationResult:
     decision_id: str
     node_id: NodeId
     idempotent_replay: bool
+
+
+@runtime_checkable
+class AuthoritativeMutationService(Protocol):
+    """The single authoritative-mutation boundary feature 010 owns (FR-9).
+
+    Any code that wants to change authoritative graph context must call a service
+    satisfying this Protocol; the concrete adapter is reached only through it, so
+    workflow and MCP callers cannot bypass approval validation. It is deliberately
+    narrow — it exposes *authorised* writes only, never raw store handles.
+    """
+
+    def upsert_adr_node(
+        self,
+        repository: RepositoryIdentity,
+        adr: ADRRecord,
+        decision: ApprovedReviewDecision | None,
+    ) -> NodeId: ...
+
+    def authorize_and_upsert(
+        self,
+        repository: RepositoryIdentity,
+        adr: ADRRecord,
+        decision: ApprovedReviewDecision | None,
+    ) -> AuthorizedMutationResult: ...
 
 
 class DurableApprovalBoundMutationService:
@@ -262,4 +288,5 @@ class DurableApprovalBoundMutationService:
 __all__ = [
     "DurableApprovalBoundMutationService",
     "AuthorizedMutationResult",
+    "AuthoritativeMutationService",
 ]
