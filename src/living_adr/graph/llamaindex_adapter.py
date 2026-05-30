@@ -21,14 +21,33 @@ from __future__ import annotations
 
 import json
 
-from living_adr.core.graph.models import MigrationResult, SchemaVersion, utc_now
+from living_adr.core.adr import ADRRecord
+from living_adr.core.approval import ApprovedReviewDecision
+from living_adr.core.graph.models import (
+    GraphEdge,
+    GraphSnapshotRef,
+    MigrationResult,
+    NodeId,
+    RelationshipType,
+    SchemaVersion,
+    utc_now,
+)
+from living_adr.core.models import StructuralChange
 from living_adr.core.repository import RepositoryIdentity
+from living_adr.graph.llamaindex_mapping import (
+    adr_node_value,
+    adr_to_entity_node,
+    edge_to_relation,
+    structural_change_node_value,
+    structural_change_to_entity_node,
+)
 from living_adr.graph.persistence import (
     GraphPersistenceConfig,
     ensure_storage_dir,
     graph_meta_path,
     property_graph_path,
 )
+from living_adr.graph.provenance import EntityProvenance, ExtractionMethod
 from living_adr.graph.schema import (
     ADAPTER_NAME,
     ADAPTER_SCHEMA_VERSION,
@@ -206,6 +225,206 @@ class LlamaIndexPropertyGraphAdapter:
             from_version=from_version,
             to_version=target_version,
             applied=True,
+        )
+
+    # ----------------------------------------------------- write side (slice 4)
+    def _ensure_meta(self, repository: RepositoryIdentity) -> dict:
+        meta = self._read_meta(repository)
+        if meta is None:
+            self.initialize_repository(repository)
+            meta = self._read_meta(repository)
+        assert meta is not None  # initialize always writes meta
+        return meta
+
+    def _write_version(self, repository: RepositoryIdentity) -> SchemaVersion:
+        """Schema version recorded on freshly written provenance.
+
+        Uses the adapter's supported version so all new projections are stamped
+        consistently even if a repository's metadata was migrated forward.
+        """
+
+        return ADAPTER_SCHEMA_VERSION
+
+    def _commit_write(self, repository: RepositoryIdentity) -> None:
+        """Persist the in-memory store and bump the repository revision once.
+
+        All validation/mapping happens *before* this is called, so a write that
+        fails never reaches this method and never mutates persisted state
+        (NFR-2: no partially-current projection is exposed).
+        """
+
+        meta = dict(self._ensure_meta(repository))
+        meta["revision"] = int(meta.get("revision", 0)) + 1
+        self._persist_store(repository)
+        self._write_meta(repository, meta)
+        self.write_calls += 1
+
+    def upsert_adr_node(
+        self,
+        repository: RepositoryIdentity,
+        adr: ADRRecord,
+        decision: ApprovedReviewDecision,
+    ) -> NodeId:
+        if adr.repository != repository:
+            raise ValueError(
+                "ADR record repository scope does not match the write scope"
+            )
+        self._ensure_meta(repository)
+        provenance = EntityProvenance(
+            repository=repository,
+            source_adr_id=adr.adr_id,
+            decision_id=adr.decision_id,
+            extraction_method=ExtractionMethod.DETERMINISTIC_ADR_PROJECTION,
+            extracted_at=utc_now(),
+            schema_version=self._write_version(repository),
+            evidence_id=adr.evidence_ids[0] if adr.evidence_ids else None,
+        )
+        node = adr_to_entity_node(repository, adr, provenance)
+        self._open_store(repository).upsert_nodes([node])
+        self._commit_write(repository)
+        return NodeId(repository=repository, value=adr_node_value(adr))
+
+    def add_relationship(
+        self,
+        repository: RepositoryIdentity,
+        from_node: NodeId,
+        to_node: NodeId,
+        relationship: RelationshipType,
+        decision: ApprovedReviewDecision,
+    ) -> GraphEdge:
+        self._ensure_meta(repository)
+        edge = GraphEdge(
+            repository=repository,
+            from_node=from_node,
+            to_node=to_node,
+            relationship=relationship,
+        )
+        provenance = self._edge_provenance(repository, from_node, decision)
+        relation = edge_to_relation(edge, provenance)
+        self._open_store(repository).upsert_relations([relation])
+        self._commit_write(repository)
+        return edge
+
+    def record_structural_change(
+        self,
+        repository: RepositoryIdentity,
+        change: StructuralChange,
+        linked_adr: NodeId,
+        decision: ApprovedReviewDecision,
+    ) -> NodeId:
+        if change.repository != repository:
+            raise ValueError(
+                "StructuralChange repository scope does not match the write scope"
+            )
+        self._ensure_meta(repository)
+        provenance = EntityProvenance(
+            repository=repository,
+            source_adr_id=linked_adr.value,
+            decision_id=decision.decision_id,
+            extraction_method=ExtractionMethod.STRUCTURAL_CHANGE_PROJECTION,
+            extracted_at=utc_now(),
+            schema_version=self._write_version(repository),
+        )
+        change_node = structural_change_to_entity_node(repository, change, provenance)
+        change_id = NodeId(
+            repository=repository, value=structural_change_node_value(change)
+        )
+        edge = GraphEdge(
+            repository=repository,
+            from_node=change_id,
+            to_node=linked_adr,
+            relationship=RelationshipType.RECORDS_STRUCTURAL_CHANGE,
+        )
+        relation = edge_to_relation(edge, provenance)
+        store = self._open_store(repository)
+        store.upsert_nodes([change_node])
+        store.upsert_relations([relation])
+        self._commit_write(repository)
+        return change_id
+
+    def supersede_adr(
+        self,
+        repository: RepositoryIdentity,
+        prior_adr: NodeId,
+        superseding_adr: NodeId,
+        decision: ApprovedReviewDecision,
+        reason: str,
+    ) -> GraphEdge:
+        self._ensure_meta(repository)
+        edge = GraphEdge(
+            repository=repository,
+            from_node=superseding_adr,
+            to_node=prior_adr,
+            relationship=RelationshipType.SUPERSEDES,
+            reason=reason,
+        )
+        provenance = self._edge_provenance(repository, superseding_adr, decision)
+        self._open_store(repository).upsert_relations(
+            [edge_to_relation(edge, provenance)]
+        )
+        self._commit_write(repository)
+        return edge
+
+    def retract_adr(
+        self,
+        repository: RepositoryIdentity,
+        adr: NodeId,
+        decision: ApprovedReviewDecision,
+        reason: str,
+    ) -> GraphEdge:
+        self._ensure_meta(repository)
+        edge = GraphEdge(
+            repository=repository,
+            from_node=adr,
+            to_node=adr,
+            relationship=RelationshipType.RETRACTS,
+            reason=reason,
+        )
+        provenance = self._edge_provenance(repository, adr, decision)
+        self._open_store(repository).upsert_relations(
+            [edge_to_relation(edge, provenance)]
+        )
+        self._commit_write(repository)
+        return edge
+
+    def _edge_provenance(
+        self,
+        repository: RepositoryIdentity,
+        source_node: NodeId,
+        decision: ApprovedReviewDecision,
+    ) -> EntityProvenance:
+        return EntityProvenance(
+            repository=repository,
+            source_adr_id=source_node.value,
+            decision_id=decision.decision_id,
+            extraction_method=ExtractionMethod.DETERMINISTIC_ADR_PROJECTION,
+            extracted_at=utc_now(),
+            schema_version=self._write_version(repository),
+        )
+
+    def rebuild_snapshot(
+        self,
+        repository: RepositoryIdentity,
+        at_revision: int | None = None,
+    ) -> GraphSnapshotRef:
+        """Return a stable, repository-scoped snapshot reference.
+
+        The snapshot is a *logical* revision marker: MCP reads pass it back to
+        ``validate_snapshot_current`` to detect whether they observed the latest
+        projection. Schema/provenance metadata are preserved; no ADR record is
+        mutated (graph data is a projection, never authority).
+        """
+
+        meta = self._ensure_meta(repository)
+        version = self._meta_schema_version(meta)
+        revision = at_revision if at_revision is not None else int(
+            meta.get("revision", 0)
+        )
+        return GraphSnapshotRef(
+            repository=repository,
+            snapshot_id=f"rev-{revision}",
+            schema_version=version,
+            created_at=utc_now(),
         )
 
 
