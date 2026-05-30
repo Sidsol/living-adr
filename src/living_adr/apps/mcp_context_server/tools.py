@@ -22,11 +22,15 @@ from living_adr.apps.mcp_context_server.errors import AdrNotFoundError, to_safe_
 from living_adr.apps.mcp_context_server.serializers import (
     serialize_adr_ref,
     serialize_provenanced_adr,
+    serialize_why_answer,
 )
 from living_adr.apps.mcp_context_server.validation import (
     McpValidationError,
+    clamp_limit,
     resolve_repository,
     validate_adr_id,
+    validate_code_area,
+    validate_question,
     validate_snapshot_id,
     validate_status,
 )
@@ -93,11 +97,43 @@ def fetch_adr_handler(
     }
 
 
+def answer_why_handler(
+    deps: McpServerDependencies, arguments: Mapping[str, object]
+) -> dict[str, object]:
+    """Answer an architecture why-question with citations (bounded inputs).
+
+    The question is length-bounded and the limit defaults to 5 / clamps to 10.
+    The read port returns an explicit no-approved-context ``WhyAnswer`` when
+    nothing answers the question, which is preserved verbatim rather than
+    synthesising rationale (NFR-4).
+    """
+
+    identity = resolve_repository(
+        deps.config, arguments.get("repository"), deps.limits
+    )
+    question = validate_question(arguments.get("question"), deps.limits)
+    code_area_id = validate_code_area(arguments.get("code_area_id"), deps.limits)
+    snapshot = validate_snapshot_id(arguments.get("snapshot"), deps.limits)
+    limit = clamp_limit(arguments.get("limit"), deps.limits)
+
+    answer = deps.query.answer_why(
+        identity,
+        question,
+        code_area_id=code_area_id,
+        limit=limit,
+    )
+
+    serialized = serialize_why_answer(answer)
+    serialized["snapshot"] = snapshot
+    return serialized
+
+
 # --------------------------------------------------------------------- registry
 # Slices append to these in dependency order (list_adrs, fetch_adr, answer_why).
 TOOL_HANDLERS: dict[str, Handler] = {
     "list_adrs": list_adrs_handler,
     "fetch_adr": fetch_adr_handler,
+    "answer_why": answer_why_handler,
 }
 
 TOOL_DEFINITIONS: list[Tool] = [
@@ -147,6 +183,40 @@ TOOL_DEFINITIONS: list[Tool] = [
             "required": ["repository", "adr_id"],
         },
     ),
+    Tool(
+        name="answer_why",
+        description=(
+            "Answer an architecture rationale (why) question for a configured "
+            "repository using approved ADR context, with citations. Optional "
+            "code_area_id, limit (default 5, max 10), and snapshot. Read-only."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Canonical host/owner/repo key.",
+                },
+                "question": {
+                    "type": "string",
+                    "description": "The architecture why-question (bounded length).",
+                },
+                "code_area_id": {
+                    "type": "string",
+                    "description": "Optional code area to anchor the question.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Optional result limit (default 5, max 10).",
+                },
+                "snapshot": {
+                    "type": "string",
+                    "description": "Optional graph snapshot id to report against.",
+                },
+            },
+            "required": ["repository", "question"],
+        },
+    ),
 ]
 
 
@@ -176,6 +246,7 @@ __all__ = [
     "SUPPORTED_ADR_STATUSES",
     "list_adrs_handler",
     "fetch_adr_handler",
+    "answer_why_handler",
     "TOOL_HANDLERS",
     "TOOL_DEFINITIONS",
     "make_dispatch",
