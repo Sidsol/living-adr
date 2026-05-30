@@ -16,6 +16,11 @@ import graph free of workflow/graph cycles.
 
 from __future__ import annotations
 
+from living_adr.approval.hashing import (
+    canonical_adr_hash,
+    canonicalize_adr_content,
+    content_matches_hash,
+)
 from living_adr.approval.minting import (
     MintResult,
     ReviewContext,
@@ -72,4 +77,7 @@ __all__ = [
     "MintResult",
     "record_review_outcome",
     "mint_approved_decision",
+    "canonical_adr_hash",
+    "canonicalize_adr_content",
+    "content_matches_hash",
 ]
