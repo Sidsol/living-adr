@@ -18,11 +18,16 @@ from collections.abc import Callable, Mapping
 from mcp.types import Tool
 
 from living_adr.apps.mcp_context_server.dependencies import McpServerDependencies
-from living_adr.apps.mcp_context_server.errors import to_safe_error
-from living_adr.apps.mcp_context_server.serializers import serialize_adr_ref
+from living_adr.apps.mcp_context_server.errors import AdrNotFoundError, to_safe_error
+from living_adr.apps.mcp_context_server.serializers import (
+    serialize_adr_ref,
+    serialize_provenanced_adr,
+)
 from living_adr.apps.mcp_context_server.validation import (
     McpValidationError,
     resolve_repository,
+    validate_adr_id,
+    validate_snapshot_id,
     validate_status,
 )
 
@@ -58,10 +63,41 @@ def list_adrs_handler(
     }
 
 
+def fetch_adr_handler(
+    deps: McpServerDependencies, arguments: Mapping[str, object]
+) -> dict[str, object]:
+    """Fetch one approved ADR with provenance for a configured repository.
+
+    An optional ``snapshot`` id is validated and echoed back; the read port's
+    ``fetch_adr`` is snapshot-agnostic, so snapshot pinning is reported to the
+    caller rather than silently ignored. A missing/out-of-scope ADR maps to a
+    safe not-found error without leaking other repositories' data.
+    """
+
+    identity = resolve_repository(
+        deps.config, arguments.get("repository"), deps.limits
+    )
+    adr_id = validate_adr_id(arguments.get("adr_id"), deps.limits)
+    snapshot = validate_snapshot_id(arguments.get("snapshot"), deps.limits)
+
+    adr = deps.query.fetch_adr(identity, adr_id)
+    if adr is None:
+        raise AdrNotFoundError(
+            f"ADR {adr_id!r} was not found for the requested repository."
+        )
+
+    return {
+        "repository": identity.key,
+        "adr": serialize_provenanced_adr(adr),
+        "snapshot": snapshot,
+    }
+
+
 # --------------------------------------------------------------------- registry
 # Slices append to these in dependency order (list_adrs, fetch_adr, answer_why).
 TOOL_HANDLERS: dict[str, Handler] = {
     "list_adrs": list_adrs_handler,
+    "fetch_adr": fetch_adr_handler,
 }
 
 TOOL_DEFINITIONS: list[Tool] = [
@@ -84,6 +120,31 @@ TOOL_DEFINITIONS: list[Tool] = [
                 },
             },
             "required": ["repository"],
+        },
+    ),
+    Tool(
+        name="fetch_adr",
+        description=(
+            "Fetch one approved ADR with its citations/provenance for a "
+            "configured repository. Optional snapshot id. Read-only."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Canonical host/owner/repo key.",
+                },
+                "adr_id": {
+                    "type": "string",
+                    "description": "The ADR identifier to fetch.",
+                },
+                "snapshot": {
+                    "type": "string",
+                    "description": "Optional graph snapshot id to report against.",
+                },
+            },
+            "required": ["repository", "adr_id"],
         },
     ),
 ]
@@ -114,6 +175,7 @@ __all__ = [
     "Handler",
     "SUPPORTED_ADR_STATUSES",
     "list_adrs_handler",
+    "fetch_adr_handler",
     "TOOL_HANDLERS",
     "TOOL_DEFINITIONS",
     "make_dispatch",
