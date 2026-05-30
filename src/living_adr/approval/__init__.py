@@ -1,0 +1,75 @@
+"""Feature 010 approval capability and audit durability package.
+
+Public surface for durable approval authority:
+
+* Models: :class:`ApprovalEvent`, :class:`MintedDecisionRecord`,
+  :class:`ConsumptionRecord`, :class:`AuditEvent`, plus the reused feature 006
+  :class:`ApprovedReviewDecision` capability and its boundary errors.
+* Repository: :class:`ApprovalAuditRepository` (protocol) with in-memory and
+  SQLite implementations.
+* Minting: :func:`record_review_outcome`, :func:`mint_approved_decision`.
+
+Higher slices add validation, the durable mutation boundary, audit queries, and
+the workflow seam; they are imported lazily by callers to keep this package's
+import graph free of workflow/graph cycles.
+"""
+
+from __future__ import annotations
+
+from living_adr.approval.minting import (
+    MintResult,
+    ReviewContext,
+    mint_approved_decision,
+    record_review_outcome,
+)
+from living_adr.approval.models import (
+    DEFAULT_DECISION_TTL,
+    ApprovalError,
+    ApprovalEvent,
+    ApprovalRequiredError,
+    ApprovedReviewDecision,
+    AuditDurabilityError,
+    AuditEvent,
+    AuditEventType,
+    ConsumptionRecord,
+    DecisionAlreadyConsumedError,
+    DecisionExpiredError,
+    DecisionNotApprovedError,
+    DecisionRepositoryMismatchError,
+    DraftContentMismatchError,
+    MintedDecisionRecord,
+    MutationFingerprintMismatchError,
+    TargetMutationMismatchError,
+)
+from living_adr.approval.repository import (
+    ApprovalAuditRepository,
+    InMemoryApprovalAuditRepository,
+    SqliteApprovalAuditRepository,
+)
+
+__all__ = [
+    "DEFAULT_DECISION_TTL",
+    "ApprovedReviewDecision",
+    "ApprovalError",
+    "ApprovalRequiredError",
+    "DecisionRepositoryMismatchError",
+    "DraftContentMismatchError",
+    "MutationFingerprintMismatchError",
+    "DecisionAlreadyConsumedError",
+    "DecisionExpiredError",
+    "DecisionNotApprovedError",
+    "TargetMutationMismatchError",
+    "AuditDurabilityError",
+    "ApprovalEvent",
+    "MintedDecisionRecord",
+    "ConsumptionRecord",
+    "AuditEvent",
+    "AuditEventType",
+    "ApprovalAuditRepository",
+    "InMemoryApprovalAuditRepository",
+    "SqliteApprovalAuditRepository",
+    "ReviewContext",
+    "MintResult",
+    "record_review_outcome",
+    "mint_approved_decision",
+]
