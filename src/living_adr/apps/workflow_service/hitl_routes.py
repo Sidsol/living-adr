@@ -31,6 +31,7 @@ from living_adr.hitl.auth import NonceSigner, UITokenGuard
 from living_adr.hitl.gateway import ReviewWorkflowGateway
 from living_adr.hitl.hashing import compute_edited_draft_hash
 from living_adr.hitl.models import page_model_from_payload, validate_edited_draft
+from living_adr.hitl.observability import emit_review_event
 from living_adr.workflow.state import ReviewAction, ReviewResumeCommand
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates" / "hitl"
@@ -132,7 +133,9 @@ def create_hitl_app(
         if not _authorized(request):
             return _unauthorized()
         summaries = gateway.list_pending()
-        obs.record_event("hitl.review.list", {"pending_count": len(summaries)})
+        emit_review_event(
+            obs, "hitl.review.list", pending_count=len(summaries)
+        )
         return HTMLResponse(_render("index.html", summaries=summaries))
 
     @app.get("/hitl/reviews/{thread_id}", response_class=HTMLResponse)
@@ -141,18 +144,17 @@ def create_hitl_app(
             return _unauthorized()
         payload = gateway.get_pending_review(thread_id)
         if payload is None:
-            obs.record_event(
-                "hitl.review.view", {"thread_id": thread_id, "result": "not_found"}
+            emit_review_event(
+                obs, "hitl.review.view", thread_id=thread_id, result="not_found"
             )
             return _not_found()
         page = page_model_from_payload(payload, thread_id=thread_id)
-        obs.record_event(
+        emit_review_event(
+            obs,
             "hitl.review.view",
-            {
-                "thread_id": thread_id,
-                "repository": page.repository_key,
-                "result": "ok",
-            },
+            thread_id=thread_id,
+            repository=page.repository_key,
+            result="ok",
         )
         return _render_review(thread_id, page)
 
@@ -196,9 +198,8 @@ def create_hitl_app(
 
         # CSRF/replay guard: nonce must bind this thread + the reviewed hash.
         if not nonce_signer.verify(nonce, thread_id, page.draft_content_hash):
-            obs.record_event(
-                "hitl.review.submit",
-                {"thread_id": thread_id, "result": "bad_nonce"},
+            emit_review_event(
+                obs, "hitl.review.submit", thread_id=thread_id, result="bad_nonce"
             )
             return HTMLResponse("Invalid or expired form token.", status_code=400)
 
@@ -243,14 +244,13 @@ def create_hitl_app(
         )
         outcome = gateway.submit_resume(thread_id, command)
         # Metadata-only: action + status enums, never the reason/comment text.
-        obs.record_event(
+        emit_review_event(
+            obs,
             "hitl.review.submit",
-            {
-                "thread_id": thread_id,
-                "action": review_action.value,
-                "result": "submitted",
-                "status": getattr(outcome.status, "value", None),
-            },
+            thread_id=thread_id,
+            action=review_action.value,
+            result="submitted",
+            status=getattr(outcome.status, "value", None),
         )
         location = (
             f"/hitl/reviews/{thread_id}/status"

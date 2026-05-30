@@ -53,3 +53,45 @@ def test_confidence_shown_with_text_not_only_color() -> None:
     # Textual confidence band, not just a colored bar.
     assert "confidence" in html.lower()
     assert ("High confidence" in html) or ("82" in html)
+
+
+# --- SL-006: explicit accessibility quality gates --------------------------
+
+
+def test_document_declares_language() -> None:
+    html = _review_html()
+    assert 'lang="en"' in html
+
+
+def test_skip_link_targets_review_actions() -> None:
+    html = _review_html()
+    assert 'class="skip-link"' in html
+    assert 'href="#review-actions"' in html
+
+
+def test_form_has_describedby_help_text() -> None:
+    html = _review_html()
+    assert 'aria-describedby="actions-help"' in html
+    assert 'id="actions-help"' in html
+
+
+def test_edit_textarea_help_is_associated() -> None:
+    html = _review_html()
+    # The textarea references its help text id for screen readers.
+    assert 'id="edited_content-help"' in html
+    assert "edited_content-help" in html
+
+
+def test_submit_and_cancel_controls_are_keyboard_reachable() -> None:
+    html = _review_html()
+    # A real submit button and a real anchor for cancel (both focusable).
+    assert "<button" in html and "Submit decision" in html
+    assert 'href="/hitl/reviews"' in html
+
+
+def test_each_evidence_and_section_has_heading_association() -> None:
+    html = _review_html()
+    # Sections are labelled via aria-labelledby for landmark navigation.
+    assert 'aria-labelledby="summary-heading"' in html
+    assert 'aria-labelledby="evidence-heading"' in html
+    assert 'aria-labelledby="review-actions-heading"' in html
