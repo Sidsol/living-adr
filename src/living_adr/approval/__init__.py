@@ -46,6 +46,10 @@ from living_adr.approval.models import (
     MutationFingerprintMismatchError,
     TargetMutationMismatchError,
 )
+from living_adr.approval.mutation_service import (
+    AuthorizedMutationResult,
+    DurableApprovalBoundMutationService,
+)
 from living_adr.approval.repository import (
     ApprovalAuditRepository,
     InMemoryApprovalAuditRepository,
@@ -83,4 +87,6 @@ __all__ = [
     "content_matches_hash",
     "validate_decision",
     "validate_for_mutation",
+    "DurableApprovalBoundMutationService",
+    "AuthorizedMutationResult",
 ]
