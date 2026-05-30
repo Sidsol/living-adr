@@ -8,6 +8,7 @@ facade are part of the contract.
 
 from __future__ import annotations
 
+from living_adr.workflow.classifiers.api_contract import APIContractChangeDetector
 from living_adr.workflow.classifiers.confidence import (
     DEFAULT_THRESHOLD,
     POLICY_ID,
@@ -20,6 +21,8 @@ from living_adr.workflow.classifiers.inputs import (
     UncertaintyReason,
     build_classifier_input,
 )
+from living_adr.workflow.classifiers.schema import SchemaChangeDetector
+from living_adr.workflow.classifiers.service import SchemaApiContractClassifier
 
 __all__ = [
     "ChangedFileEvidence",
@@ -30,4 +33,7 @@ __all__ = [
     "ConfidencePolicy",
     "POLICY_ID",
     "DEFAULT_THRESHOLD",
+    "SchemaChangeDetector",
+    "APIContractChangeDetector",
+    "SchemaApiContractClassifier",
 ]
