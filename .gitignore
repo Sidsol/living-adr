@@ -26,3 +26,6 @@ htmlcov/
 
 # Runtime graph persistence (feature 007)
 var/
+
+# Local GitHub App private key + secrets
+secrets/
