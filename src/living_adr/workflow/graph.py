@@ -44,6 +44,7 @@ NODE_INTAKE = "intake"
 NODE_CLASSIFY = "classify"
 NODE_DRAFT = "draft"
 NODE_HITL = "hitl"
+NODE_MINTING = "minting"
 NODE_MUTATION = "mutation"
 NODE_REJECTION = "rejection"
 NODE_DEFERRAL = "deferral"
@@ -80,9 +81,16 @@ def build_workflow_graph(
     mutation: MutationHandoffNode,
     rejection: object,
     deferral: object,
+    minting: object | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
-    """Assemble and compile the workflow graph from injected node seams."""
+    """Assemble and compile the workflow graph from injected node seams.
+
+    When ``minting`` (a feature-010 approval-minting node) is provided, the
+    approve path routes ``hitl -> minting -> mutation`` so a one-shot approval
+    capability is minted and bound to the exact target record before the
+    approval-bound write; otherwise approve routes straight to ``mutation``.
+    """
 
     builder = StateGraph(WorkflowState)
     builder.add_node(NODE_INTAKE, intake)
@@ -99,11 +107,17 @@ def build_workflow_graph(
         NODE_CLASSIFY, _route_after_classify, {NODE_DRAFT: NODE_DRAFT, END: END}
     )
     builder.add_edge(NODE_DRAFT, NODE_HITL)
+
+    if minting is not None:
+        builder.add_node(NODE_MINTING, minting)
+        builder.add_edge(NODE_MINTING, NODE_MUTATION)
+    approve_target = NODE_MINTING if minting is not None else NODE_MUTATION
+
     builder.add_conditional_edges(
         NODE_HITL,
         _route_after_hitl,
         {
-            NODE_MUTATION: NODE_MUTATION,
+            NODE_MUTATION: approve_target,
             NODE_REJECTION: NODE_REJECTION,
             NODE_DEFERRAL: NODE_DEFERRAL,
         },

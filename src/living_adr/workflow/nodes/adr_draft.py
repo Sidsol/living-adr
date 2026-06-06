@@ -24,6 +24,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
+from living_adr.approval.hashing import canonical_adr_hash
 from living_adr.core.adr_draft import (
     ADRDraft,
     CitationKind,
@@ -428,7 +429,11 @@ class ClaudeADRDraftNode:
             return {
                 "draft": DraftRef(
                     draft_id=draft.draft_id,
-                    content_hash=draft.content_hash,
+                    # Bind the review/approval to the canonical hash of the exact
+                    # rendered Markdown body the reviewer sees and that the
+                    # approval-bound mutation re-validates (feature 006/010), so
+                    # the content-drift check holds for real drafts.
+                    content_hash=canonical_adr_hash(draft.rendered_markdown),
                     preview=draft.rendered_markdown,
                     citation_ids=tuple(c.ref for c in draft.citations),
                     structural_change_id=draft.structural_change_id,
