@@ -15,6 +15,8 @@ import anyio
 from living_adr.apps.mcp_context_server.app import McpContextServerApp
 from living_adr.apps.startup_base import ConfigStartupBase
 
+STORAGE_PATH_ENV = "LIVING_ADR_STORAGE_PATH"
+
 
 class McpContextServerStartup(ConfigStartupBase):
     """Validated config snapshot owned by the mcp-context-server entrypoint."""
@@ -48,6 +50,9 @@ def main() -> int:  # pragma: no cover - process entrypoint, exercised manually
     write/mutation/SCM/LLM dependency is constructed here.
     """
 
+    import os
+    from pathlib import Path
+
     from living_adr.apps.mcp_context_server.app import build_app
     from living_adr.apps.mcp_context_server.dependencies import (
         McpServerDependencies,
@@ -58,11 +63,17 @@ def main() -> int:  # pragma: no cover - process entrypoint, exercised manually
     from living_adr.graph.llamaindex_adapter import (
         LlamaIndexPropertyGraphAdapter,
     )
+    from living_adr.graph.persistence import OpenMode, graph_config_for_storage
 
     startup = load_startup_config()
+    # Read the SAME property-graph root the workflow service writes, so approved
+    # ADRs published there are served here (read-only).
+    storage_path = Path(os.environ.get(STORAGE_PATH_ENV, "."))
     deps = McpServerDependencies(
         config=startup.config,
-        query=LlamaIndexPropertyGraphAdapter(),
+        query=LlamaIndexPropertyGraphAdapter(
+            graph_config_for_storage(storage_path, open_mode=OpenMode.READ_ONLY)
+        ),
         observability=build_observability_for_app(),
     )
     app = build_app(deps)

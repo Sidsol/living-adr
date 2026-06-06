@@ -22,10 +22,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from living_adr.approval.mutation_service import DurableApprovalBoundMutationService
-from living_adr.apps.workflow_service.startup import APP_ID_ENV
+from living_adr.apps.workflow_service.startup import (
+    APP_ID_ENV,
+    build_ingestion_provider,
+)
 from living_adr.core.observability import NoOpObservability
 from living_adr.hitl.gateway import ReviewResumeServiceGateway
 from living_adr.persistence.ingestion_store import SqliteIngestionStore
+from living_adr.publication.pr_publisher import (
+    PublishingReviewGateway,
+    PullRequestPublisher,
+)
 from living_adr.workflow.approval_node import ApprovalMintingNode
 from living_adr.workflow.checkpointing import (
     WorkflowCheckpointConfig,
@@ -53,7 +60,6 @@ ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
 CHECKPOINT_DB_NAME = "workflow_checkpoints.db"
 INGESTION_DB_NAME = "ingestion.db"
 APPROVAL_AUDIT_DB_NAME = "approval_audit.db"
-GRAPH_DIR_NAME = "graph"
 
 
 def build_draft_scheduler(
@@ -152,6 +158,7 @@ def build_drafting_runtime(
     producer: StructuralChangeProducer | None = None,
     audit: ApprovalAuditRepository | None = None,
     graph_store: ArchitectureGraphStore | None = None,
+    publisher: PullRequestPublisher | None = None,
     observability: Observability | None = None,
 ) -> DraftingRuntime:
     """Assemble the scheduler + HITL gateway over a shared checkpointer.
@@ -161,6 +168,7 @@ def build_drafting_runtime(
     crossed between threads. When both ``audit`` and ``graph_store`` are given,
     the approve path mints a one-shot capability (``ApprovalMintingNode``) and
     performs the approval-bound graph write (``DurableApprovalBoundMutationService``).
+    When ``publisher`` is given, a COMPLETED approve also opens the publish-back PR.
     """
 
     minting: object | None = None
@@ -189,10 +197,14 @@ def build_drafting_runtime(
         mutation_service=mutation_service,
         observability=observability,
     )
-    gateway = ReviewResumeServiceGateway(
+    gateway: ReviewWorkflowGateway = ReviewResumeServiceGateway(
         review_service,
         pending_thread_ids=lambda: _distinct_thread_ids(checkpointer),
     )
+    if publisher is not None:
+        gateway = PublishingReviewGateway(
+            gateway, review_service, publisher, observability=observability
+        )
     return DraftingRuntime(
         scheduler=scheduler, gateway=gateway, checkpointer=checkpointer
     )
@@ -227,11 +239,17 @@ def build_drafting_runtime_from_env(
     # Lazy import: the property-graph adapter pulls in llama-index.
     from living_adr.approval.repository import SqliteApprovalAuditRepository
     from living_adr.graph.llamaindex_adapter import LlamaIndexPropertyGraphAdapter
-    from living_adr.graph.persistence import GraphPersistenceConfig
+    from living_adr.graph.persistence import graph_config_for_storage
 
     audit = SqliteApprovalAuditRepository(storage_dir / APPROVAL_AUDIT_DB_NAME)
     graph_store = LlamaIndexPropertyGraphAdapter(
-        GraphPersistenceConfig(graph_root=storage_dir / GRAPH_DIR_NAME)
+        graph_config_for_storage(storage_dir)
+    )
+    provider = build_ingestion_provider(config, resolved)
+    publisher = (
+        PullRequestPublisher(provider, config, observability=observability)
+        if provider is not None
+        else None
     )
     return build_drafting_runtime(
         db_path=storage_dir / INGESTION_DB_NAME,
@@ -240,6 +258,7 @@ def build_drafting_runtime_from_env(
         checkpointer=checkpointer,
         audit=audit,
         graph_store=graph_store,
+        publisher=publisher,
         observability=observability,
     )
 

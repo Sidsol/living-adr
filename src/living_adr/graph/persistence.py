@@ -55,6 +55,25 @@ class GraphPersistenceConfig:
     open_mode: OpenMode = OpenMode.READ_WRITE
 
 
+#: Sub-directory under the shared storage path that holds the property graph.
+GRAPH_SUBDIR = "graph"
+
+
+def graph_config_for_storage(
+    storage_path: Path | str, *, open_mode: OpenMode = OpenMode.READ_WRITE
+) -> GraphPersistenceConfig:
+    """Graph persistence config rooted at ``<storage_path>/graph``.
+
+    Both deployables derive the property-graph root from the shared
+    ``LIVING_ADR_STORAGE_PATH`` so the workflow service (single writer) and the
+    read-only MCP context server resolve the **same** per-repository graph.
+    """
+
+    return GraphPersistenceConfig(
+        graph_root=Path(storage_path) / GRAPH_SUBDIR, open_mode=open_mode
+    )
+
+
 def _repository_slug(repository: RepositoryIdentity) -> str:
     """Derive a filesystem-safe, collision-resistant directory name.
 

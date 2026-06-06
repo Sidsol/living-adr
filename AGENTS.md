@@ -54,15 +54,21 @@ GitHub Copilot CLI in `~/.copilot/mcp-config.json` as `living-adr`:
   "mcpServers": {
     "living-adr": {
       "command": "C:\\repos\\living-adr\\.venv\\Scripts\\living-adr-mcp.exe",
-      "env": { "LIVING_ADR_CONFIG": "C:\\repos\\living-adr\\living-adr.config.yaml" }
+      "env": {
+        "LIVING_ADR_CONFIG": "C:\\repos\\living-adr\\living-adr.config.yaml",
+        "LIVING_ADR_STORAGE_PATH": "C:\\repos\\living-adr\\var\\living-adr"
+      }
     }
   }
 }
 ```
 
 For other MCP hosts (Claude Desktop, VS Code, etc.) use the same `command` +
-`env`. The `env` block carries **only** the config path — never secrets. The
-read-only server needs no write credentials.
+`env`. The `env` block carries **only** the config path and the storage path
+(``LIVING_ADR_STORAGE_PATH`` — the property-graph root the workflow service
+writes and this read-only server reads) — never secrets. Both deployables must
+point ``LIVING_ADR_STORAGE_PATH`` at the same directory, or the MCP server will
+serve an empty graph. The read-only server needs no write credentials.
 
 See `docs/mcp-context-server.md` for the full tool contract and safety notes.
 
