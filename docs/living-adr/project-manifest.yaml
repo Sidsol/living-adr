@@ -1,0 +1,186 @@
+project:
+  name: living-adr
+  folder: 'C:\repos\crispy-docs\projects\004-living-adr'
+  created: 2026-05-29
+  phases_complete: [clarify, research, intention, structure, plan, yield]
+
+feature_graph:
+  features:
+    - id: "001"
+      name: walking-skeleton-smoke
+      folder: 'features\001-walking-skeleton-smoke'
+      theme: TH-01
+      priority: P1
+      estimated_slices: 5
+      depends_on: []
+      parallelizable: true
+      auto_split_from: null
+    - id: "002"
+      name: tracked-repository-configuration
+      folder: 'features\002-tracked-repository-configuration'
+      theme: TH-07
+      priority: P1
+      estimated_slices: 5
+      depends_on: []
+      parallelizable: true
+      auto_split_from: null
+    - id: "003"
+      name: github-webhook-ingestion
+      folder: 'features\003-github-webhook-ingestion'
+      theme: TH-01
+      priority: P1
+      estimated_slices: 6
+      depends_on: ["002"]
+      parallelizable: true
+      auto_split_from: null
+    - id: "004"
+      name: dependency-change-detection
+      folder: 'features\004-dependency-change-detection'
+      theme: TH-02
+      priority: P1
+      estimated_slices: 5
+      depends_on: ["003"]
+      parallelizable: true
+      auto_split_from: structural-change-detection
+    - id: "005"
+      name: schema-api-contract-change-detection
+      folder: 'features\005-schema-api-contract-change-detection'
+      theme: TH-02
+      priority: P1
+      estimated_slices: 7
+      depends_on: ["003"]
+      parallelizable: true
+      auto_split_from: structural-change-detection
+    - id: "006"
+      name: graph-store-ports-and-approval-seam
+      folder: 'features\006-graph-store-ports-and-approval-seam'
+      theme: TH-04
+      priority: P1
+      estimated_slices: 6
+      depends_on: ["002"]
+      parallelizable: true
+      auto_split_from: graph-store-and-swap-seam
+    - id: "007"
+      name: llamaindex-property-graph-adapter
+      folder: 'features\007-llamaindex-property-graph-adapter'
+      theme: TH-04
+      priority: P1
+      estimated_slices: 7
+      depends_on: ["006"]
+      parallelizable: true
+      auto_split_from: graph-store-and-swap-seam
+    - id: "015"
+      name: workflow-orchestration-checkpointing
+      folder: 'features\015-workflow-orchestration-checkpointing'
+      theme: TH-03
+      priority: P1
+      estimated_slices: 6
+      depends_on: ["003", "006"]
+      parallelizable: true
+      auto_split_from: null
+    - id: "008"
+      name: claude-adr-drafting-capability
+      folder: 'features\008-claude-adr-drafting-capability'
+      theme: TH-03
+      priority: P1
+      estimated_slices: 7
+      depends_on: ["004", "007", "015"]
+      parallelizable: false
+      auto_split_from: null
+    - id: "009"
+      name: hitl-review-ui
+      folder: 'features\009-hitl-review-ui'
+      theme: TH-03
+      priority: P1
+      estimated_slices: 6
+      depends_on: ["008", "015"]
+      parallelizable: false
+      auto_split_from: hitl-approval-workflow
+    - id: "010"
+      name: approval-capability-and-audit-durability
+      folder: 'features\010-approval-capability-and-audit-durability'
+      theme: TH-03
+      priority: P1
+      estimated_slices: 7
+      depends_on: ["009", "007", "015"]
+      parallelizable: false
+      auto_split_from: hitl-approval-workflow
+    - id: "011"
+      name: adr-publish-back-github
+      folder: 'features\011-adr-publish-back-github'
+      theme: TH-04
+      priority: P1
+      estimated_slices: 5
+      depends_on: ["010", "003"]
+      parallelizable: false
+      auto_split_from: null
+    - id: "012"
+      name: mcp-context-server
+      folder: 'features\012-mcp-context-server'
+      theme: TH-05
+      priority: P1
+      estimated_slices: 6
+      depends_on: ["007", "002"]
+      parallelizable: true
+      auto_split_from: null
+    - id: "013"
+      name: langsmith-observability-quality
+      folder: 'features\013-langsmith-observability-quality'
+      theme: TH-06
+      priority: P2
+      estimated_slices: 5
+      depends_on: ["002"]
+      parallelizable: true
+      auto_split_from: null
+    - id: "014"
+      name: repository-onboarding-validation
+      folder: 'features\014-repository-onboarding-validation'
+      theme: TH-07
+      priority: P2
+      estimated_slices: 4
+      depends_on: ["002", "003"]
+      parallelizable: true
+      auto_split_from: null
+
+roadmap:
+  milestones:
+  - id: M1
+    name: Walking Skeleton
+    features: ["001"]
+  - id: M2
+    name: Core Foundations
+    features: ["002", "003", "006"]
+  - id: M3
+    name: Detection, Graph Adapter, and Orchestration Backbone
+    features: ["004", "005", "007", "015"]
+  - id: M4
+    name: First End-to-End ADR and MCP Context Delivery
+    features: ["008", "009", "010", "011", "012"]
+  - id: M5
+    name: Operational and Onboarding Hardening
+    features: ["013", "014"]
+  waves:
+  - ["001", "002"]
+  - ["003", "006", "013"]
+  - ["004", "005", "007", "014", "015"]
+  - ["008", "012"]
+  - ["009"]
+  - ["010"]
+  - ["011"]
+  critical_path_length: 7
+  mvp_milestone: M4
+
+review_gates:
+  architecture:
+    status: passed
+  feature_map:
+    status: passed
+  roadmap:
+    status: passed
+
+walking_skeleton: "001"
+feature_run_order: ["001", "002", "003", "006", "013", "004", "005", "007", "014", "015", "008", "012", "009", "010", "011"]
+ready: true
+blocker_count: 0
+blockers:
+  []

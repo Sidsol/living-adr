@@ -1,0 +1,91 @@
+feature:
+  id: "013"
+  name: langsmith-observability-quality
+  theme: TH-06
+  priority: P2
+  folder: "C:\\repos\\crispy-docs\\projects\\004-living-adr\\features\\013-langsmith-observability-quality"
+  depends_on: ["002"]
+  ready: true
+  ready_reason: "All feature-level CRISPY planning artifacts are present; implementation is ready once feature 002's Observability port exists as specified."
+
+artifacts:
+  spec: spec.md
+  research: research.md
+  intent: intent.md
+  outline: outline.md
+  plan: plan.md
+  tasks: tasks.md
+  checklist: checklist.md
+
+architecture_anchors:
+  - "..\\..\\architecture.md#tech-stack"
+  - "..\\..\\architecture.md#cross-cutting"
+  - "..\\..\\architecture.md#data-model"
+  - "..\\..\\architecture.md#anti-patterns"
+
+dependency_contracts:
+  - feature_id: "002"
+    contract: "Use existing src\\living_adr\\core\\observability.py Observability port; do not redefine."
+    methods:
+      - "record_event(name: str, metadata: Mapping[str, object] | None = None) -> None"
+      - "increment_counter(name: str, value: int = 1, metadata: Mapping[str, object] | None = None) -> None"
+      - "start_span(name: str, metadata: Mapping[str, object] | None = None) -> ContextManager[ObservationSpan]"
+
+slices:
+  - id: 1
+    name: "Adapter configuration and safe no-op fallback"
+    depends_on: []
+    automation: HITL
+    parallelizable: false
+    ready: true
+    checkpoint_criteria_count: 4
+  - id: 2
+    name: "Default-deny metadata policy"
+    depends_on: [1]
+    automation: HITL
+    parallelizable: false
+    ready: true
+    checkpoint_criteria_count: 4
+  - id: 3
+    name: "Latency token and structured metric helpers"
+    depends_on: [2]
+    automation: AFK
+    parallelizable: true
+    ready: true
+    checkpoint_criteria_count: 4
+  - id: 4
+    name: "Draft outcome and mutation authorization tracking"
+    depends_on: [2]
+    automation: HITL
+    parallelizable: true
+    ready: true
+    checkpoint_criteria_count: 4
+  - id: 5
+    name: "Retrieval and drafting evaluation harness"
+    depends_on: [3, 4]
+    automation: HITL
+    parallelizable: false
+    ready: true
+    checkpoint_criteria_count: 4
+
+quality_gates:
+  metadata_only_traces: true
+  default_deny_raw_export: true
+  latency_metrics: true
+  token_count_metrics: true
+  draft_acceptance_tracking: true
+  unauthorized_mutation_checks: true
+  eval_harness_regression_signal: true
+  sm_01_instrumentation: true
+  sm_02_instrumentation: true
+  sm_03_eval_harness_owned_here: true
+  sm_04_eval_harness_owned_here: true
+  sm_05_instrumentation: true
+  fm_21_trace_leakage_guard: true
+  fm_22_eval_overfitting_guard: true
+
+implementation_notes:
+  - "Preserve NoOpObservability fallback when LangSmith is disabled or unconfigured."
+  - "Use fake LangSmith clients in tests; no live network credentials required."
+  - "Treat evaluation metrics as regression signals, not proof of correctness."
+  - "Do not export raw diffs, prompts, provisional drafts, reviewer comments, retrieved context, code snippets, secrets, or personal data by default."

@@ -1,0 +1,182 @@
+feature:
+  id: "010"
+  name: approval-capability-and-audit-durability
+  folder: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability'
+  project: living-adr
+  ready: true
+  priority: P1
+  slice_count: 7
+  task_count: 25
+  depends_on:
+    - "009"
+    - "007"
+    - "015"
+
+artifacts:
+  spec: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\spec.md'
+  research: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\research.md'
+  intent: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\intent.md'
+  outline: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\outline.md'
+  plan: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\plan.md'
+  tasks: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\tasks.md'
+  checklist: 'crispy-docs\projects\004-living-adr\features\010-approval-capability-and-audit-durability\checklist.md'
+
+contracts:
+  consumes:
+    feature_009:
+      producer: hitl-review-ui
+      contract: ReviewResumeCommand from reviewer approve, approve_after_edit, reject, or defer action
+      notes: Feature 009 captures reviewer intent and content hashes but does not mint authority.
+    feature_007:
+      producer: llamaindex-property-graph-adapter
+      contract: ArchitectureGraphStore and ArchitectureContextQuery behind domain ports
+      notes: Feature 010 uses graph write ports only through ApprovalBoundMutationService and never imports adapter internals.
+    feature_015:
+      producer: workflow-orchestration-checkpointing
+      contract: WorkflowState, ReviewRequestPayload, ReviewResumeCommand, mutation handoff seam, deterministic thread id
+      notes: Feature 015 checkpoint durability remains distinct from feature 010 audit durability.
+  produces:
+    approved_review_decision:
+      description: Short-lived one-shot capability minted from human-approved review outcomes.
+      fields:
+        - decision_id
+        - repository
+        - reviewer_id
+        - workflow_thread_id
+        - review_event_id
+        - adr_draft_id
+        - adr_record_id
+        - adr_draft_content_hash
+        - structural_change_event_id
+        - decision_version
+        - decision_minted_at
+        - decision_ttl
+        - target_mutation_fingerprint
+        - consumed_at
+      default_ttl_minutes: 10
+      hash_algorithm: SHA-256 over canonical UTF-8 LF rendered ADR Markdown
+    approval_bound_mutation_service:
+      description: Sole authoritative mutation path for graph writes and downstream publish-back consumption.
+      required_for_feature_011: true
+    audit_durability:
+      description: Append-only approval, validation, consumption, mutation, and publication linkage audit separate from workflow checkpoints.
+
+slices:
+  - id: S010-01
+    name: durable-review-event-capture
+    tasks: [T010-S1-001, T010-S1-002, T010-S1-003]
+  - id: S010-02
+    name: approved-decision-minting-and-content-hash
+    tasks: [T010-S2-001, T010-S2-002, T010-S2-003]
+  - id: S010-03
+    name: ttl-and-validation-failures
+    tasks: [T010-S3-001, T010-S3-002, T010-S3-003]
+  - id: S010-04
+    name: one-shot-consumption-and-idempotent-retry
+    tasks: [T010-S4-001, T010-S4-002, T010-S4-003, T010-S4-004]
+  - id: S010-05
+    name: append-only-audit-durability-and-sm05-queries
+    tasks: [T010-S5-001, T010-S5-002, T010-S5-003, T010-S5-004]
+  - id: S010-06
+    name: approval-bound-mutation-service-graph-boundary
+    tasks: [T010-S6-001, T010-S6-002, T010-S6-003, T010-S6-004]
+  - id: S010-07
+    name: workflow-and-publish-consumption-contract
+    tasks: [T010-S7-001, T010-S7-002, T010-S7-003, T010-S7-004]
+
+tasks:
+  - id: T010-S1-001
+    slice: S010-01
+    title: Defining approval event models
+  - id: T010-S1-002
+    slice: S010-01
+    title: Creating durable approval repository
+  - id: T010-S1-003
+    slice: S010-01
+    title: Recording all review outcomes
+  - id: T010-S2-001
+    slice: S010-02
+    title: Defining approved decision contract
+  - id: T010-S2-002
+    slice: S010-02
+    title: Implementing canonical ADR hashing
+  - id: T010-S2-003
+    slice: S010-02
+    title: Minting approved capabilities
+  - id: T010-S3-001
+    slice: S010-03
+    title: Adding TTL validation
+  - id: T010-S3-002
+    slice: S010-03
+    title: Adding repository and target validation
+  - id: T010-S3-003
+    slice: S010-03
+    title: Detecting draft content tampering
+  - id: T010-S4-001
+    slice: S010-04
+    title: Designing consumption records
+  - id: T010-S4-002
+    slice: S010-04
+    title: Recording atomic consumption
+  - id: T010-S4-003
+    slice: S010-04
+    title: Supporting idempotent retry
+  - id: T010-S4-004
+    slice: S010-04
+    title: Rejecting decision reuse
+  - id: T010-S5-001
+    slice: S010-05
+    title: Writing audit event taxonomy
+  - id: T010-S5-002
+    slice: S010-05
+    title: Persisting validation failure audits
+  - id: T010-S5-003
+    slice: S010-05
+    title: Building SM05 audit queries
+  - id: T010-S5-004
+    slice: S010-05
+    title: Separating audit from checkpoints
+  - id: T010-S6-001
+    slice: S010-06
+    title: Defining mutation service interface
+  - id: T010-S6-002
+    slice: S010-06
+    title: Delegating graph writes through service
+  - id: T010-S6-003
+    slice: S010-06
+    title: Preventing direct graph mutation
+  - id: T010-S6-004
+    slice: S010-06
+    title: Preserving adapter neutrality
+  - id: T010-S7-001
+    slice: S010-07
+    title: Wiring workflow approval node
+  - id: T010-S7-002
+    slice: S010-07
+    title: Passing capability to mutation handoff
+  - id: T010-S7-003
+    slice: S010-07
+    title: Documenting feature011 publish boundary
+  - id: T010-S7-004
+    slice: S010-07
+    title: Verifying end-to-end approval durability
+
+validation:
+  self_review:
+    required_files_exist: true
+    manifest_yaml_valid: true
+    ready_true: true
+    slice_count_consistent: true
+    task_ids_unique: true
+    no_production_code_written: true
+  future_commands:
+    - 'cd C:\repos\living-adr'
+    - "uv run ruff check"
+    - 'uv run pytest tests\approval tests\workflow\test_approval_resume_integration.py tests\contracts\test_feature011_approval_contract.py'
+
+assumptions:
+  ttl_default_minutes: 10
+  audit_store: workflow-service-owned SQLite tables separate from LangGraph checkpoints
+  reviewer_identity: single configured PoC reviewer id from feature 009
+  content_hash_canonicalization: UTF-8 with LF line endings
+  publication_contract: feature 011 must carry decision_id and consume the ApprovalBoundMutationService boundary

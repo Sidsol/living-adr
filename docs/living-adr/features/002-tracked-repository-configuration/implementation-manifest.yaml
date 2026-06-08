@@ -1,0 +1,183 @@
+id: "002"
+name: tracked-repository-configuration
+project: LivingADR
+folder: crispy-docs\projects\004-living-adr\features\002-tracked-repository-configuration
+ready: true
+artifact_set:
+  - spec.md
+  - research.md
+  - intent.md
+  - outline.md
+  - plan.md
+  - tasks.md
+  - checklist.md
+  - implementation-manifest.yaml
+sources:
+  architecture: ..\..\architecture.md
+  domain_research: ..\..\domain-research.md
+  vision: ..\..\vision.md
+  feature_map: ..\..\feature-map.md
+  roadmap: ..\..\roadmap.md
+architecture_anchors:
+  - ..\..\architecture.md#data-model
+  - ..\..\architecture.md#cross-cutting
+  - ..\..\architecture.md#service-boundaries
+  - ..\..\architecture.md#repositories
+  - ..\..\architecture.md#deployment
+theme_links:
+  primary:
+    - TH-07
+  enables:
+    - TH-01
+    - TH-03
+    - TH-04
+    - TH-05
+    - TH-06
+success_metric_links:
+  direct:
+    - SM-02
+    - SM-05
+  indirect:
+    - SM-01
+    - SM-03
+    - SM-04
+feature_dependencies: []
+downstream_features:
+  - "003"
+  - "006"
+  - "012"
+  - "013"
+  - "014"
+  - "008"
+  - "009"
+  - "010"
+  - "011"
+failure_modes:
+  - FM-14
+  - FM-15
+  - FM-16
+  - FM-17
+  - FM-21
+  - FM-23
+  - FM-24
+scope:
+  in:
+    - living-adr.config.yaml loading and validation
+    - RepositoryIdentity and RepositoryConfig validation
+    - startup error reporting for workflow service and MCP context server
+    - publication-policy parsing
+    - external-LLM allow/deny parsing
+    - restart-required lifecycle semantics
+    - thin no-op Observability core port/interface
+  out:
+    - hot reload
+    - live GitHub App installation verification
+    - actual GitHub ingestion or publish-back
+    - Claude calls or LangSmith implementation
+    - graph storage or MCP tool implementation
+slices:
+  - id: 1
+    name: Core repository config models
+    stories: [US-1, US-2]
+    depends_on: []
+    parallelizable: false
+    automation: HITL
+    automation_reason: Establishes shared source-of-truth contracts consumed by all later features and needs review for scope/identity semantics.
+    task_ids: [TASK-001, TASK-002, TASK-003, TASK-004, TASK-005]
+    checkpoint_criteria:
+      - One-entry repository list validates without a single-repo branch.
+      - Duplicate canonical repository identities fail validation.
+      - Missing identity fields fail with field-specific messages.
+      - No model field accepts secret values.
+  - id: 2
+    name: YAML loader and startup diagnostics
+    stories: [US-1, US-4]
+    depends_on: [1]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Startup failure behavior affects both deployables and readiness semantics.
+    task_ids: [TASK-006, TASK-007, TASK-008, TASK-009, TASK-010]
+    checkpoint_criteria:
+      - Default path is used when LIVING_ADR_CONFIG is absent.
+      - Override path is used when LIVING_ADR_CONFIG is set.
+      - Invalid YAML or validation errors produce clear startup diagnostics.
+      - Both deployables refuse readiness on invalid config.
+  - id: 3
+    name: Publication and external LLM policy parsing
+    stories: [US-3]
+    depends_on: [1]
+    parallelizable: true
+    automation: HITL
+    automation_reason: Policy decisions govern GitHub writes and external data egress, requiring human review.
+    task_ids: [TASK-011, TASK-012, TASK-013, TASK-014]
+    checkpoint_criteria:
+      - All three architecture-approved publication policies parse successfully.
+      - Unknown publication policy fails validation.
+      - Publish-to-GitHub policies require valid target branch and relative ADR path template.
+      - External LLM allow and deny states are explicit and test-covered.
+  - id: 4
+    name: Restart-required lifecycle semantics
+    stories: [US-4]
+    depends_on: [2, 3]
+    parallelizable: false
+    automation: AFK
+    automation_reason: Purely verifies absence of hot reload and startup snapshot behavior once loader/policies exist.
+    task_ids: [TASK-015, TASK-016, TASK-017]
+    checkpoint_criteria:
+      - Tests show no hot reload after file changes.
+      - No file watcher, background reload task, or per-request config parse is introduced.
+      - Documentation states config changes require restarting both deployables.
+  - id: 5
+    name: No-op Observability core port
+    stories: [US-5]
+    depends_on: [1]
+    parallelizable: true
+    automation: HITL
+    automation_reason: Defines an instrumentation boundary for later features and must preserve default-deny trace semantics.
+    task_ids: [TASK-018, TASK-019, TASK-020]
+    checkpoint_criteria:
+      - No-op event, counter, and span methods are safe with metadata-only payloads.
+      - Span context manager exits cleanly on success and exception paths.
+      - Core observability module imports no LangSmith package.
+      - Raw export restrictions are documented in the contract.
+task_summary:
+  total: 23
+  p1: 23
+  p2: 0
+  p3: 0
+  verification_tasks:
+    - TASK-021
+    - TASK-022
+    - TASK-023
+implementation_task_ids:
+  - TASK-001
+  - TASK-002
+  - TASK-003
+  - TASK-004
+  - TASK-005
+  - TASK-006
+  - TASK-007
+  - TASK-008
+  - TASK-009
+  - TASK-010
+  - TASK-011
+  - TASK-012
+  - TASK-013
+  - TASK-014
+  - TASK-015
+  - TASK-016
+  - TASK-017
+  - TASK-018
+  - TASK-019
+  - TASK-020
+  - TASK-021
+  - TASK-022
+  - TASK-023
+validation:
+  self_reviewed: true
+  artifacts_consistent: true
+  no_files_outside_feature_folder_intended: true
+  notes:
+    - Slice count matches feature-map estimate of approximately 5 slices.
+    - Observability no-op port is in-scope for feature 002; LangSmith adapter remains feature 013.
+    - Hot reload is explicitly out of scope; restart-required semantics are planned and tested.

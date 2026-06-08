@@ -1,0 +1,108 @@
+feature:
+  id: "001"
+  name: walking-skeleton-smoke
+  folder: "C:\\repos\\crispy-docs\\projects\\004-living-adr\\features\\001-walking-skeleton-smoke"
+  project: LivingADR
+  theme: TH-01
+  priority: P1
+  milestone: M1
+  wave: W0
+  depends_on: []
+  ready: true
+
+architecture_refs:
+  - "..\\..\\architecture.md#service-boundaries"
+  - "..\\..\\architecture.md#data-model"
+  - "..\\..\\architecture.md#deployment"
+  - "..\\..\\architecture.md#anti-patterns"
+
+success_metric_links:
+  - id: SM-01
+    smoke_relevance: "Stub HITL accept path records an approved draft outcome."
+  - id: SM-02
+    smoke_relevance: "Replay-to-draft path can be timed locally, without claiming production latency."
+  - id: SM-03
+    smoke_relevance: "MCP-style why answer returns a cited approved ADR for one seeded query."
+  - id: SM-04
+    smoke_relevance: "One representative why question is answerable from approved context."
+  - id: SM-05
+    smoke_relevance: "Unauthorized stub persistence is rejected; approved decision is required."
+
+slices:
+  - id: SL-001
+    name: Replay merged-PR smoke event
+    stories: [US-1]
+    depends_on: []
+    parallelizable: false
+    automation: AFK
+    automation_reason: "Deterministic fixture and normalization with no safety boundary beyond repository scoping."
+    tasks: [TASK-001, TASK-002, TASK-003]
+    checkpoint_criteria_count: 3
+  - id: SL-002
+    name: Stub classify and draft ADR
+    stories: [US-2]
+    depends_on: [SL-001]
+    parallelizable: false
+    automation: AFK
+    automation_reason: "Pure deterministic stubs with golden-output tests and no external calls."
+    tasks: [TASK-004, TASK-005, TASK-006]
+    checkpoint_criteria_count: 3
+  - id: SL-003
+    name: Stub HITL accept decision
+    stories: [US-3]
+    depends_on: [SL-002]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Touches review-gate semantics and must preserve meaningful approval language."
+    tasks: [TASK-007, TASK-008, TASK-009]
+    checkpoint_criteria_count: 3
+  - id: SL-004
+    name: Approval-bound stub persistence
+    stories: [US-3]
+    depends_on: [SL-003]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Safety-critical mutation seam proving no bypass of approved decision."
+    tasks: [TASK-010, TASK-011, TASK-012]
+    checkpoint_criteria_count: 3
+  - id: SL-005
+    name: MCP-style why query smoke
+    stories: [US-4]
+    depends_on: [SL-004]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Public agent/IDE context boundary must remain read-only and approved-context-only."
+    tasks: [TASK-013, TASK-014, TASK-015]
+    checkpoint_criteria_count: 3
+
+task_summary:
+  total: 15
+  by_priority:
+    P1: 15
+    P2: 0
+    P3: 0
+  execution_order:
+    - [TASK-001, TASK-002, TASK-003]
+    - [TASK-004, TASK-005, TASK-006]
+    - [TASK-007, TASK-008, TASK-009]
+    - [TASK-010, TASK-011, TASK-012]
+    - [TASK-013, TASK-014, TASK-015]
+
+handoff:
+  implementation_repo: "C:\\repos\\living-adr"
+  repo_exists_at_planning_time: false
+  production_code_generated: false
+  external_calls_allowed_in_smoke: false
+  approval_bound_mutation_required: true
+  mcp_read_only_required: true
+  source_of_truth_hierarchy: "PR/code fixture is evidence; approved ADRRecord is authoritative rationale; graph/query state is projection with citations."
+
+artifacts:
+  - spec.md
+  - research.md
+  - intent.md
+  - outline.md
+  - plan.md
+  - tasks.md
+  - checklist.md
+  - implementation-manifest.yaml

@@ -1,0 +1,175 @@
+id: "014"
+name: repository-onboarding-validation
+project: LivingADR
+folder: crispy-docs\projects\004-living-adr\features\014-repository-onboarding-validation
+ready: true
+artifact_set:
+  - spec.md
+  - research.md
+  - intent.md
+  - outline.md
+  - plan.md
+  - tasks.md
+  - checklist.md
+  - implementation-manifest.yaml
+sources:
+  architecture: ..\..\architecture.md
+  domain_research: ..\..\domain-research.md
+  vision: ..\..\vision.md
+  feature_map: ..\..\feature-map.md
+  roadmap: ..\..\roadmap.md
+  dependency_intents:
+    - ..\002-tracked-repository-configuration\intent.md
+    - ..\003-github-webhook-ingestion\intent.md
+architecture_anchors:
+  - ..\..\architecture.md#repositories
+  - ..\..\architecture.md#data-model
+  - ..\..\architecture.md#cross-cutting
+  - ..\..\architecture.md#deployment
+  - ..\..\architecture.md#anti-patterns
+theme_links:
+  primary:
+    - TH-07
+  supports:
+    - TH-01
+    - TH-04
+    - TH-06
+success_metric_links:
+  direct:
+    - SM-02
+    - SM-05
+  indirect:
+    - SM-01
+feature_dependencies:
+  - "002"
+  - "003"
+downstream_features:
+  - "011"
+  - "013"
+failure_modes:
+  - FM-17
+  - FM-18
+  - FM-21
+  - FM-23
+  - FM-24
+scope:
+  in:
+    - CLI or documented startup onboarding validation check
+    - GitHub App installation verification for configured repository
+    - publication-policy permission diagnostics
+    - config validation message reuse and operator formatting
+    - .env.example alignment and placeholder checks
+    - restart-required lifecycle diagnostics
+  out:
+    - hot reload
+    - automatic repository discovery
+    - multi-repo governance automation
+    - automatic GitHub App creation or installation
+    - Azure DevOps onboarding
+    - webhook ingestion implementation itself
+    - ADR publish-back implementation
+    - graph mutation or MCP query behavior
+slices:
+  - id: 1
+    name: Secret-safe onboarding diagnostics
+    stories: [US-1, US-4]
+    depends_on: []
+    parallelizable: false
+    automation: AFK
+    automation_reason: Pure diagnostic model and formatter with deterministic redaction and exit semantics.
+    task_ids: [TASK-001, TASK-002, TASK-003, TASK-004, TASK-005, TASK-006]
+    checkpoint_criteria:
+      - Blocking diagnostics produce failed result and non-zero exit code mapping.
+      - Passing result reports safe metadata only.
+      - Formatter groups diagnostics by category and includes remediation text.
+      - Secret-like values and raw payload/diff/prompt/draft fields are redacted.
+  - id: 2
+    name: Config, environment, and .env.example alignment
+    stories: [US-1, US-3, US-4]
+    depends_on: [1]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Reuses feature 002 config semantics and defines the operator-facing setup contract.
+    task_ids: [TASK-007, TASK-008, TASK-009, TASK-010]
+    checkpoint_criteria:
+      - Invalid config diagnostics come from feature 002 loader/error types.
+      - Missing required env vars are reported using names matching .env.example.
+      - .env.example contains placeholders only and no real secrets.
+      - Output states config changes require restarting both deployables.
+      - No file watcher, hot reload, or automatic repository discovery is introduced.
+  - id: 3
+    name: GitHub App installation and permission verification
+    stories: [US-2, US-4]
+    depends_on: [1, 2]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Validates SCM trust and permission boundary through feature 003 provider handles.
+    task_ids: [TASK-011, TASK-012, TASK-013, TASK-014, TASK-015]
+    checkpoint_criteria:
+      - Valid installation and required permissions produce passing diagnostics.
+      - Missing, wrong, or suspended installation fails with repository-scoped remediation.
+      - livingadr_only requires contents:read only.
+      - GitHub publication policies require contents:write.
+      - GitHub API details remain inside the SCM adapter/provider seam.
+      - Tests do not require live GitHub network access.
+  - id: 4
+    name: Operator command/startup check integration
+    stories: [US-1, US-4]
+    depends_on: [2, 3]
+    parallelizable: false
+    automation: AFK
+    automation_reason: Thin wrapper over the validated service plus end-to-end command behavior.
+    task_ids: [TASK-016, TASK-017, TASK-018, TASK-019]
+    checkpoint_criteria:
+      - Passing validation exits 0 and prints safe repository metadata and next step.
+      - Blocking validation exits non-zero and prints grouped diagnostics.
+      - CLI/startup wrapper contains no YAML parsing or direct GitHub API logic.
+      - Output labels the check as PoC single-repo onboarding validation and excludes multi-repo automation.
+task_summary:
+  total: 23
+  p1: 22
+  p2: 1
+  p3: 0
+  verification_tasks:
+    - TASK-020
+    - TASK-021
+    - TASK-022
+    - TASK-023
+implementation_task_ids:
+  - TASK-001
+  - TASK-002
+  - TASK-003
+  - TASK-004
+  - TASK-005
+  - TASK-006
+  - TASK-007
+  - TASK-008
+  - TASK-009
+  - TASK-010
+  - TASK-011
+  - TASK-012
+  - TASK-013
+  - TASK-014
+  - TASK-015
+  - TASK-016
+  - TASK-017
+  - TASK-018
+  - TASK-019
+  - TASK-020
+  - TASK-021
+  - TASK-022
+  - TASK-023
+validation:
+  self_reviewed: true
+  artifacts_consistent: true
+  no_files_outside_feature_folder_intended: true
+  ready_rationale: Dependencies 002 and 003 provide the necessary config and GitHub provider seams; remaining CLI spelling choice does not block implementation.
+  notes:
+    - Slice count matches feature-map estimate of approximately 4 slices.
+    - GitHub App install verification is explicitly in this feature, not feature 002.
+    - Config validation and GitHub App handles are reused from dependency intents.
+    - Hot reload and multi-repo governance automation are explicitly out of scope.
+assumptions:
+  - Preferred command spelling is living-adr onboard validate; a startup-check flag is acceptable if the scaffold lacks a CLI framework.
+  - Exact environment variable names should follow feature 002/003 implementation if they differ from planning names.
+  - Live GitHub integration tests are optional/manual; unit tests use fakes.

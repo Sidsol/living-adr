@@ -1,0 +1,169 @@
+feature:
+  id: "011"
+  name: adr-publish-back-github
+  folder: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github'
+  project: living-adr
+  ready: true
+  priority: P1
+  slice_count: 5
+  task_count: 19
+  depends_on:
+    - "010"
+    - "003"
+
+artifacts:
+  spec: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\spec.md'
+  research: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\research.md'
+  intent: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\intent.md'
+  outline: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\outline.md'
+  plan: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\plan.md'
+  tasks: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\tasks.md'
+  checklist: 'crispy-docs\projects\004-living-adr\features\011-adr-publish-back-github\checklist.md'
+
+contracts:
+  consumes:
+    feature_010:
+      producer: approval-capability-and-audit-durability
+      contract: ApprovedReviewDecision via ApprovalBoundMutationService
+      required_fields:
+        - decision_id
+        - repository
+        - adr_record_id
+        - adr_draft_content_hash
+        - target_mutation_fingerprint
+        - decision_minted_at
+        - decision_ttl
+      notes: Publish-back is an authoritative mutation and must pass through the approval-bound mutation boundary; decision_id is the audit join key.
+    feature_003:
+      producer: github-webhook-ingestion
+      contract: SCMProvider and GitHubProvider with repository-scoped GitHub App credentials
+      notes: Publication uses provider seams for contents/list/commit operations and must not redefine GitHub credentials or raw REST access.
+    feature_002_transitive:
+      producer: tracked-repository-configuration
+      contract: RepositoryConfig including adr_publication_policy, target branch, and ADR path template
+      notes: Target branch/path/policy are config-owned; default path is docs\adr\NNNN-<slug>.md.
+  produces:
+    publication_service:
+      description: Approval-bound service that publishes approved ADRRecord markdown according to repository policy.
+      direct_commit_default: true
+      pr_publication: post_poc_extension
+    publication_record:
+      key_fields:
+        - decision_id
+        - repository
+        - adr_record_id
+        - content_hash
+        - target_branch
+        - target_path
+        - commit_sha
+        - status
+      idempotency: Same decision_id and same fingerprint returns prior result; mismatched fingerprint is rejected.
+    scm_contents_port_extensions:
+      description: Provider-neutral file listing/read/write operations implemented by GitHubProvider if not already present.
+
+slices:
+  - id: S011-01
+    name: publication-policy-and-target-resolution
+    tasks: [T011-S1-001, T011-S1-002, T011-S1-003]
+  - id: S011-02
+    name: approval-bound-publication-audit-and-idempotency
+    tasks: [T011-S2-001, T011-S2-002, T011-S2-003, T011-S2-004]
+  - id: S011-03
+    name: adr-slugging-numbering-and-path-allocation
+    tasks: [T011-S3-001, T011-S3-002, T011-S3-003, T011-S3-004]
+  - id: S011-04
+    name: github-provider-contents-commit-through-scm-port
+    tasks: [T011-S4-001, T011-S4-002, T011-S4-003, T011-S4-004]
+  - id: S011-05
+    name: workflow-handoff-boundary-tests-and-observability
+    tasks: [T011-S5-001, T011-S5-002, T011-S5-003, T011-S5-004]
+
+tasks:
+  - id: T011-S1-001
+    slice: S011-01
+    title: Defining publication request and target models
+  - id: T011-S1-002
+    slice: S011-01
+    title: Resolving publication policy and target branch
+  - id: T011-S1-003
+    slice: S011-01
+    title: Computing publication fingerprints
+  - id: T011-S2-001
+    slice: S011-02
+    title: Creating publication repository records
+  - id: T011-S2-002
+    slice: S011-02
+    title: Reserving publication intent by decision
+  - id: T011-S2-003
+    slice: S011-02
+    title: Enforcing ApprovalBoundMutationService validation
+  - id: T011-S2-004
+    slice: S011-02
+    title: Returning idempotent prior publication results
+  - id: T011-S3-001
+    slice: S011-03
+    title: Implementing deterministic ADR slugging
+  - id: T011-S3-002
+    slice: S011-03
+    title: Parsing existing ADR numeric prefixes
+  - id: T011-S3-003
+    slice: S011-03
+    title: Allocating next ADR path
+  - id: T011-S3-004
+    slice: S011-03
+    title: Detecting same-decision existing files
+  - id: T011-S4-001
+    slice: S011-04
+    title: Extending SCM contents port
+  - id: T011-S4-002
+    slice: S011-04
+    title: Implementing GitHub file listing and read checks
+  - id: T011-S4-003
+    slice: S011-04
+    title: Committing ADR file through GitHub provider
+  - id: T011-S4-004
+    slice: S011-04
+    title: Handling commit conflicts and provider errors
+  - id: T011-S5-001
+    slice: S011-05
+    title: Wiring workflow publication node
+  - id: T011-S5-002
+    slice: S011-05
+    title: Emitting publication audit and observability
+  - id: T011-S5-003
+    slice: S011-05
+    title: Adding read-side boundary tests
+  - id: T011-S5-004
+    slice: S011-05
+    title: Verifying end-to-end publish-back contract
+
+validation:
+  self_review:
+    required_files_exist: true
+    manifest_yaml_valid: true
+    ready_true: true
+    slice_count_consistent: true
+    task_ids_unique: true
+    no_production_code_written: true
+    consumes_feature_010_approval_bound_service: true
+    records_decision_id_audit_linkage: true
+    uses_feature_003_github_provider: true
+    uses_repository_config_publication_policy: true
+    handles_idempotency: true
+    handles_adr_numbering: true
+  future_commands:
+    - 'cd C:\repos\living-adr'
+    - 'uv run ruff check'
+    - 'uv run pytest tests\publication tests\scm\test_github_provider_contents.py tests\workflow\test_publication_node.py tests\contracts\test_feature011_boundaries.py'
+
+assumptions:
+  publication_default: direct_commit
+  pr_publication_scope: post_poc
+  path_default: 'docs\adr\NNNN-<slug>.md'
+  numbering_default: four_digit_zero_padded_max_existing_plus_one
+  first_number: '0001'
+  slug_default: lowercase_ascii_hyphenated_max_80_chars
+  idempotency_marker: livingadr_decision_id
+  conflict_retry_attempts: 3
+  commit_author: GitHub App identity
+  raw_observability_export: disabled_by_default

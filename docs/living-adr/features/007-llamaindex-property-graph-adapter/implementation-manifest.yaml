@@ -1,0 +1,204 @@
+id: "007"
+name: llamaindex-property-graph-adapter
+project: LivingADR
+folder: crispy-docs\projects\004-living-adr\features\007-llamaindex-property-graph-adapter
+ready: true
+artifact_set:
+  - spec.md
+  - research.md
+  - intent.md
+  - outline.md
+  - plan.md
+  - tasks.md
+  - checklist.md
+  - implementation-manifest.yaml
+sources:
+  architecture: ..\..\architecture.md
+  domain_research: ..\..\domain-research.md
+  vision: ..\..\vision.md
+  feature_map: ..\..\feature-map.md
+  roadmap: ..\..\roadmap.md
+  dependency_feature_006_spec: ..\006-graph-store-ports-and-approval-seam\spec.md
+  dependency_feature_006_intent: ..\006-graph-store-ports-and-approval-seam\intent.md
+architecture_anchors:
+  - ..\..\architecture.md#tech-stack
+  - ..\..\architecture.md#service-boundaries
+  - ..\..\architecture.md#data-model
+  - ..\..\architecture.md#cross-cutting
+  - ..\..\architecture.md#deployment
+theme_links:
+  primary:
+    - TH-04
+  enables:
+    - TH-03
+    - TH-05
+success_metric_links:
+  direct:
+    - SM-03
+    - SM-04
+  indirect:
+    - SM-01
+    - SM-05
+feature_dependencies:
+  - "006"
+downstream_features:
+  - "008"
+  - "010"
+  - "012"
+failure_modes:
+  - FM-08
+  - FM-09
+  - FM-10
+  - FM-11
+  - FM-13
+  - FM-15
+  - FM-16
+  - FM-21
+scope:
+  in:
+    - LlamaIndexPropertyGraphAdapter implementing feature 006 graph ports
+    - repository-scoped graph nodes and query filtering
+    - schema-version metadata and migration hooks
+    - local persistence under var\graph
+    - SQLite/WAL-compatible single-writer/read-only-reader assumptions
+    - provenance on extracted entities and edges
+    - MCP-safe read snapshots and query DTOs
+    - feature 006 conformance suite execution against adapter fixture
+    - drift and false-edge validation diagnostics
+  out:
+    - redefining ArchitectureGraphStore or ArchitectureContextQuery
+    - redefining ApprovalBoundMutationService or ApprovedReviewDecision
+    - durable approval capability minting and one-shot consumption persistence
+    - MCP server tools/resources
+    - LangGraph workflow orchestration
+    - Claude ADR drafting
+    - Neo4j/RDF/Postgres graph backends
+    - broad historical backfill
+slices:
+  - id: 1
+    name: Adapter skeleton and persistence root
+    stories: [US-1, US-3]
+    depends_on: []
+    parallelizable: false
+    automation: HITL
+    automation_reason: Establishes default adapter boundary and path/open-mode rules behind feature 006 ports.
+    task_ids: [TASK-001, TASK-002, TASK-003, TASK-004]
+    checkpoint_criteria:
+      - Repository storage paths are deterministic, collision-resistant, and stay under var\graph.
+      - Adapter can initialize and reopen a repository graph fixture.
+      - Public imports expose the adapter class but no LlamaIndex storage context or SQLite connection.
+  - id: 2
+    name: Repository isolation and schema metadata
+    stories: [US-1, US-2]
+    depends_on: [1]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Encodes repository scope and schema-version governance that prevent drift.
+    task_ids: [TASK-005, TASK-006, TASK-007]
+    checkpoint_criteria:
+      - current_schema_version(repository) returns persisted metadata for initialized graphs.
+      - Missing or unsupported schema metadata fails deterministically or requires migration.
+      - Identical ADR or code-area identifiers in different repositories remain isolated.
+  - id: 3
+    name: Provenance and relationship validation
+    stories: [US-4, US-7]
+    depends_on: [2]
+    parallelizable: true
+    automation: HITL
+    automation_reason: Safety-critical false-edge mitigation and audit traceability.
+    task_ids: [TASK-008, TASK-009, TASK-010]
+    checkpoint_criteria:
+      - Every persisted node or edge requires ADR, evidence, decision, and extraction provenance.
+      - Unsupported entity or relationship labels are rejected or quarantined before current graph persistence.
+      - Returned graph paths include provenance sufficient for ADR/evidence citation.
+  - id: 4
+    name: Write-side port implementation
+    stories: [US-1, US-3, US-4]
+    depends_on: [2, 3]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Implements approved graph mutations behind 006 contracts and must avoid partial writes.
+    task_ids: [TASK-011, TASK-012, TASK-013]
+    checkpoint_criteria:
+      - All write methods accept 006 RepositoryIdentity and ApprovedReviewDecision without signature changes.
+      - Write failures do not expose partially current projections.
+      - Persisted graph can be reopened with nodes, edges, and provenance intact.
+  - id: 5
+    name: Read snapshots and query DTOs
+    stories: [US-5]
+    depends_on: [4]
+    parallelizable: false
+    automation: HITL
+    automation_reason: MCP-facing read semantics cross a trust boundary and must remain mutation-free.
+    task_ids: [TASK-014, TASK-015, TASK-016]
+    checkpoint_criteria:
+      - MCP-facing methods return only 006 domain DTOs.
+      - Read methods require repository scope and do not mutate graph state.
+      - Snapshot validation returns deterministic current/stale results.
+  - id: 6
+    name: 006 conformance suite green
+    stories: [US-6]
+    depends_on: [4, 5]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Required proof that this adapter satisfies the dependency feature's executable contract.
+    task_ids: [TASK-017, TASK-018]
+    checkpoint_criteria:
+      - Feature 006 conformance suite passes against LlamaIndexPropertyGraphAdapter.
+      - No conformance test is weakened, skipped, or redefined to fit LlamaIndex.
+      - Adapter direct tests and conformance tests agree on repository scope and provenance behavior.
+  - id: 7
+    name: Drift diagnostics and final verification
+    stories: [US-2, US-7]
+    depends_on: [6]
+    parallelizable: false
+    automation: AFK
+    automation_reason: Additive diagnostics and existing-tool verification after contract behavior is implemented.
+    task_ids: [TASK-019, TASK-020, TASK-021, TASK-022, TASK-023]
+    checkpoint_criteria:
+      - check_conformance(repository) reports missing provenance, schema mismatch, orphan edges, and repository mismatch.
+      - Core ports remain free of LlamaIndex imports; LlamaIndex imports stay in adapter package.
+      - Existing pytest and Ruff commands pass.
+task_summary:
+  total: 23
+  p1: 23
+  p2: 0
+  p3: 0
+  verification_tasks:
+    - TASK-021
+    - TASK-022
+    - TASK-023
+implementation_task_ids:
+  - TASK-001
+  - TASK-002
+  - TASK-003
+  - TASK-004
+  - TASK-005
+  - TASK-006
+  - TASK-007
+  - TASK-008
+  - TASK-009
+  - TASK-010
+  - TASK-011
+  - TASK-012
+  - TASK-013
+  - TASK-014
+  - TASK-015
+  - TASK-016
+  - TASK-017
+  - TASK-018
+  - TASK-019
+  - TASK-020
+  - TASK-021
+  - TASK-022
+  - TASK-023
+validation:
+  self_reviewed: true
+  artifacts_consistent: true
+  no_files_outside_feature_folder_intended: true
+  ready_rationale: All required planning artifacts exist, slice/task counts align, feature 006 dependency is explicit, architecture anchors are referenced, and conformance/provenance/schema/WAL/MCP snapshot gates are represented.
+  notes:
+    - Slice count matches feature-map estimate of approximately 7 slices.
+    - Feature 007 implements default adapter behind feature 006 ports and must not redefine them.
+    - Implementation readiness assumes feature 006 has landed before execution begins.
+    - Durable approval capability persistence remains feature 010; MCP server implementation remains feature 012.

@@ -1,0 +1,168 @@
+feature:
+  id: "005"
+  name: schema-api-contract-change-detection
+  project: "004-living-adr"
+  theme: "TH-02"
+  folder: "C:\\repos\\crispy-docs\\projects\\004-living-adr\\features\\005-schema-api-contract-change-detection"
+
+status:
+  ready: true
+  reason: "Planning artifacts are complete. OQ-005-1 is resolved as configurable semantic-change-default-v1 with conservative default threshold 0.70, per-repository override support, and below-threshold evidence retention."
+  generated_at: "planning-time"
+
+inputs:
+  project_artifacts:
+    - "..\\..\\architecture.md"
+    - "..\\..\\domain-research.md"
+    - "..\\..\\vision.md"
+    - "..\\..\\feature-map.md"
+    - "..\\..\\roadmap.md"
+  dependency_features:
+    - id: "003"
+      name: github-webhook-ingestion
+      consumed_contracts:
+        - SCMEvent
+        - ChangeEvidence/candidate evidence bundle
+        - changed file metadata
+        - diff handles or summaries
+        - RepositoryIdentity
+        - Observability
+  sibling_alignment:
+    - id: "004"
+      name: dependency-change-detection
+      status: "spec.md and intent.md read during update"
+      required_alignment: "Reuse feature 004 StructuralChange and ChangeEvidence serialized field set byte-identically; schema/API semantics use existing shared fields and allowed values."
+
+artifacts:
+  spec: spec.md
+  research: research.md
+  intent: intent.md
+  outline: outline.md
+  plan: plan.md
+  tasks: tasks.md
+  checklist: checklist.md
+  manifest: implementation-manifest.yaml
+
+scope:
+  in:
+    - Database/schema change detection from merged-PR evidence
+    - API contract change detection from merged-PR evidence
+    - Feature 004 byte-identical StructuralChange and ChangeEvidence output contract
+    - Evidence summaries, confidence, threshold policy semantic-change-default-v1 default 0.70, and explicit uncertainty
+    - No-ADR-needed/low-confidence outcome retention
+    - Metadata-only observability
+  out:
+    - Dependency manifest detection owned by feature 004
+    - Claude ADR drafting owned by feature 008
+    - HITL review and approval owned by features 009 and 010
+    - Graph adapter and mutation owned by features 006 and 007
+    - Live database introspection, generator execution, broad history mining, or Azure DevOps implementation
+
+architecture_anchors:
+  - "..\\..\\architecture.md#service-boundaries"
+  - "..\\..\\architecture.md#data-model"
+  - "..\\..\\architecture.md#cross-cutting"
+  - "..\\..\\architecture.md#anti-patterns"
+
+resolved_decisions:
+  - id: RD-005-1
+    title: "Confidence threshold for ADR routing"
+    blocking: false
+    description: "Use configurable semantic-change-default-v1 with default threshold 0.70 and per-repository override support. Candidates below threshold are emitted as low-confidence ChangeEvidence/no-ADR-needed outcomes and are not dropped; feature 009 HITL review remains authoritative."
+  - id: RD-005-2
+    title: "Conservative default assumption"
+    blocking: false
+    description: "Default 0.70 is intentionally conservative for MVP ADR-fatigue control; repository overrides allow tuning."
+
+slices:
+  - id: 1
+    name: Shared StructuralChange contract
+    stories: [US-3]
+    depends_on: []
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Cross-feature contract must align with 004 and 008."
+    tasks: [TASK-001, TASK-002]
+    checkpoint_criteria_count: 3
+  - id: 2
+    name: Evidence input adapter
+    stories: [US-6]
+    depends_on: [1]
+    parallelizable: false
+    automation: AFK
+    automation_reason: "Pure adapter over feature 003 evidence fixtures once contract exists."
+    tasks: [TASK-003, TASK-004, TASK-005]
+    checkpoint_criteria_count: 3
+  - id: 3
+    name: Schema change detector
+    stories: [US-1, US-4]
+    depends_on: [2]
+    parallelizable: true
+    automation: HITL
+    automation_reason: "Detector semantics require human review to avoid schema/API conflation and false certainty."
+    tasks: [TASK-006, TASK-007]
+    checkpoint_criteria_count: 3
+  - id: 4
+    name: API contract detector
+    stories: [US-2, US-4]
+    depends_on: [2]
+    parallelizable: true
+    automation: HITL
+    automation_reason: "Public contract semantics and compatibility signals need review."
+    tasks: [TASK-008, TASK-009]
+    checkpoint_criteria_count: 3
+  - id: 5
+    name: Confidence threshold and uncertainty policy
+    stories: [US-4, US-5]
+    depends_on: [3, 4]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Encodes resolved configurable default threshold 0.70 and uncertainty taxonomy."
+    tasks: [TASK-010, TASK-011, TASK-012]
+    checkpoint_criteria_count: 4
+  - id: 6
+    name: Classifier service integration
+    stories: [US-3, US-6]
+    depends_on: [5]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Workflow-facing producer boundary affects feature 015 and 008."
+    tasks: [TASK-013, TASK-014, TASK-015]
+    checkpoint_criteria_count: 3
+  - id: 7
+    name: Fixture matrix and metadata verification
+    stories: [US-1, US-2, US-4, US-6]
+    depends_on: [6]
+    parallelizable: false
+    automation: AFK
+    automation_reason: "Additive tests and observability assertions after behavior is defined."
+    tasks: [TASK-016, TASK-017, TASK-018]
+    checkpoint_criteria_count: 3
+
+threshold_policy:
+  id: semantic-change-default-v1
+  default_threshold: 0.70
+  per_repository_override_allowed: true
+  below_threshold_behavior: "emit low-confidence ChangeEvidence/no-ADR-needed outcome; do not drop"
+  authoritative_filter: "feature 009 HITL review"
+
+quality_gates:
+  schema_api_distinct: true
+  structural_change_byte_identical_with_004: true
+  confidence_recorded: true
+  explicit_uncertainty_recorded: true
+  threshold_decision_resolved: true
+  raw_diff_trace_leakage_allowed: false
+  production_code_modified: false
+
+verification:
+  planning_self_review:
+    - "All requested artifacts exist in the feature folder."
+    - "Slice count is 7 across outline, plan, tasks, and manifest."
+    - "TASK IDs are consistent between plan, tasks, and manifest."
+    - "Schema and API semantics remain distinct."
+    - "StructuralChange/ChangeEvidence output reuses feature 004 serialized field set byte-identically."
+    - "Confidence threshold decision is resolved: semantic-change-default-v1 default 0.70 with per-repository override support."
+  implementation_commands:
+    - "uv run pytest"
+    - "uv run ruff check"

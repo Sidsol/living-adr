@@ -1,0 +1,63 @@
+gates:
+  architecture:
+    status: passed
+    reviewer: spec-review+code-review (2 passes) + user
+    mode: interactive
+    findings_count:
+      pass_1: { high: 1, medium: 7, low: 3 }
+      pass_2: { high: 0, medium: 4, low: 1 }
+      pass_3_after_revision: { high: 0, medium: 0, low: 0 }
+    revisions: 3
+    notes: |
+      Pass 1 (initial): spec-review found 1 high + 3 medium; code-review found 4 medium + 3 low.
+      Architecture revised; user product decision on ADR publication policy = Option C (configurable per repo).
+      Pass 2 (re-review on user request, option B): both reviewers confirmed all prior findings RESOLVED.
+        code-review surfaced 4 NEW mediums (deeper pass) + 1 NEW low.
+      Pass 3 (final surgical revision, user option A): all 4 new mediums folded in surgically.
+        New low (GitHub App scope union) accepted and recorded under ## Reviewer Findings.
+      Final architecture metadata confirms: swappable_graph_seam_designed, hitl_structural_enforcement,
+        adr_publication_policy=configurable_per_repo, concurrent_persistence_pattern=single-writer+WAL,
+        langsmith_privacy_policy=default_deny_raw, capability_replay_protection,
+        capability_pinned_to_draft_and_evidence, wal_colocation_constraint_documented,
+        anthropic_data_egress_policy_documented, azure_devops_extensibility_seam_designed.
+    timestamp: 2026-05-25T13:05:00-07:00
+  feature_map:
+    status: passed
+    reviewer: spec-review+code-review (2 passes) + user
+    mode: interactive
+    findings_count:
+      pass_1: { high: 1, medium: 4, low: 1 }
+      pass_2_after_revision: { high: 0, medium: 0, low: 0 }
+    revisions: 1
+    notes: |
+      Pass 1: spec-review found 1 high (production LangGraph orchestration/checkpointing/HITL-interrupt
+        backbone had no owning feature) + 2 medium; code-review found 2 medium + 1 low. The high finding
+        was contested (code-review scored the same issue medium). User chose to revise.
+      Revision (1): added feature 015 workflow-orchestration-checkpointing (depends_on ["003","006"])
+        owning the LangGraph state-machine assembly + SQLite checkpointer + HITL interrupt/resume;
+        008/009/010 now depend on 015. Relaxed 008 off 005 (now depends_on ["004","007","015"]) so the
+        dependency-change vertical reaches HITL/publish first; 005 remains P1 follow-on producer.
+        Anchored the no-op Observability core port in feature 002; 013 now depends_on ["002"].
+      Pass 2 (re-review): both reviewers confirmed ALL prior findings RESOLVED, graph acyclic with a valid
+        topological build order, edges match expected set exactly, 015 buildable on [003,006] against
+        stubbed nodes without overlapping 009/010, all architectural seams hold, no regressions.
+      Final: feature_count=15, auto_split_count=3, complexity_warning_count=0 (≤15, no warning).
+    timestamp: 2026-05-29T12:55:00-07:00
+  roadmap:
+    status: passed
+    reviewer: spec-review+code-review + user
+    mode: interactive
+    findings_count:
+      pass_1: { high: 0, medium: 1, low: 0 }
+    revisions: 1
+    notes: |
+      spec-review found 1 medium: M4 (MVP) exit criteria claimed SM-01..SM-05, but SM-03/SM-04 require
+        the held-out query/evaluation harness delivered in feature 013 (M5) and are not reachable at M4.
+      code-review passed clean: confirmed waves W0-W6, 7-node critical path, milestone build-order,
+        M4 MVP integration (intake 003 → detect 004/005 → orchestrate 015 → draft 008 → HITL 009 →
+        approve 010 → publish 011 + MCP read 012, with graph 006/007), and machine-readable block all
+        internally consistent with the feature-map DAG. No high/medium/low.
+      Correction folded in: M4 now claims SM-01, SM-02, SM-05; SM-03/SM-04 attributed to M5/feature 013.
+        Waves, critical path, and feature groupings unchanged.
+      Final: milestone_count=5, wave_count=7, critical_path_length=7, mvp_milestone=M4.
+    timestamp: 2026-05-29T13:10:00-07:00
