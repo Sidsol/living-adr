@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from living_adr.core.repository import RepositoryIdentity
@@ -46,6 +47,16 @@ class GitHubApiError(Exception):
         self.rate_limited = rate_limited
 
 
+@dataclass(frozen=True)
+class PullRequestHandle:
+    """Metadata-only handle for an opened pull request (no token/body)."""
+
+    number: int
+    html_url: str
+    head_ref: str
+    base_ref: str
+
+
 class GitHubClient(Protocol):
     """Fakeable GitHub transport seam. Real impls own auth + httpx; fakes return
     canned data so no network call occurs in tests."""
@@ -55,6 +66,8 @@ class GitHubClient(Protocol):
     def get_diff(self, path: str) -> str: ...
 
     def put_json(self, path: str, payload: dict) -> object: ...
+
+    def post_json(self, path: str, payload: dict) -> object: ...
 
 
 def _map_api_error(error: GitHubApiError) -> SCMProviderError:
@@ -347,5 +360,70 @@ class GitHubProvider:
             created=sha is None,
         )
 
+    # --- Branch + pull request (feature 011 PR-style publish) ----------
 
-__all__ = ["GitHubApiError", "GitHubClient", "GitHubProvider"]
+    def get_branch_head_sha(
+        self, repository: RepositoryIdentity, branch: str
+    ) -> str:
+        """Return the commit SHA at the head of ``branch``."""
+
+        path = f"/repos/{repository.owner}/{repository.repo}/git/ref/heads/{branch}"
+        try:
+            data = self._client.get_json(path)
+        except GitHubApiError as exc:
+            raise _map_api_error(exc) from exc
+        obj = data.get("object") if isinstance(data, Mapping) else None
+        sha = obj.get("sha") if isinstance(obj, Mapping) else None
+        if not sha:
+            raise TransientProviderError("unexpected git ref payload shape")
+        return str(sha)
+
+    def create_branch(
+        self, repository: RepositoryIdentity, new_branch: str, base_sha: str
+    ) -> bool:
+        """Create ``new_branch`` at ``base_sha``. Returns ``False`` if it exists."""
+
+        path = f"/repos/{repository.owner}/{repository.repo}/git/refs"
+        payload = {"ref": f"refs/heads/{new_branch}", "sha": base_sha}
+        try:
+            self._client.post_json(path, payload)
+        except GitHubApiError as exc:
+            if exc.status == 422:
+                # Reference already exists → idempotent (reuse the branch).
+                return False
+            raise _map_api_error(exc) from exc
+        return True
+
+    def open_pull_request(
+        self,
+        repository: RepositoryIdentity,
+        *,
+        title: str,
+        head: str,
+        base: str,
+        body: str = "",
+    ) -> PullRequestHandle:
+        """Open a pull request from ``head`` into ``base``."""
+
+        path = f"/repos/{repository.owner}/{repository.repo}/pulls"
+        payload = {"title": title, "head": head, "base": base, "body": body}
+        try:
+            data = self._client.post_json(path, payload)
+        except GitHubApiError as exc:
+            raise _map_api_error(exc) from exc
+        if not isinstance(data, Mapping):
+            raise TransientProviderError("unexpected pull request payload shape")
+        return PullRequestHandle(
+            number=int(data.get("number") or 0),
+            html_url=str(data.get("html_url") or ""),
+            head_ref=head,
+            base_ref=base,
+        )
+
+
+__all__ = [
+    "GitHubApiError",
+    "GitHubClient",
+    "GitHubProvider",
+    "PullRequestHandle",
+]

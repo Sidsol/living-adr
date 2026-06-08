@@ -711,7 +711,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
@@ -720,6 +722,7 @@ dependencies = [
     { name = "llama-index-core" },
     { name = "mcp" },
     { name = "pydantic" },
+    { name = "pyjwt" },
     { name = "pyyaml" },
     { name = "uvicorn" },
 ]
@@ -734,7 +737,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.104.1" },
+    { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastapi", specifier = ">=0.136.3" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "langgraph", specifier = ">=1.2.1" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0.0" },
@@ -743,6 +748,7 @@ requires-dist = [
     { name = "llama-index-core", specifier = ">=0.14.22" },
     { name = "mcp", specifier = ">=1.27.1" },
     { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "pyjwt", specifier = ">=2.10.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "uvicorn", specifier = ">=0.48.0" },
 ]

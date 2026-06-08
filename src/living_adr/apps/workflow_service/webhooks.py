@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from living_adr.core.observability import NoOpObservability, Observability
 from living_adr.scm.github_webhook import (
@@ -23,6 +23,9 @@ from living_adr.scm.github_webhook import (
     extract_headers,
     verify_signature,
 )
+
+if TYPE_CHECKING:
+    from living_adr.core.models import SCMEvent
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,10 @@ class WebhookResponse:
     outcome: str
     delivery_id: str | None = None
     detail: str | None = None
+    # Set only on the accepted (202) path so the HTTP layer can schedule the
+    # off-request drafting run; never serialized into the response body.
+    scm_event: SCMEvent | None = None
+    evidence_refs: tuple[str, ...] = ()
 
 
 class WebhookPipeline(Protocol):

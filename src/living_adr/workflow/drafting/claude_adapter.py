@@ -66,7 +66,6 @@ def _is_timeout(exc: BaseException) -> bool:
 
 class AnthropicClaudeClient:
     """Adapter binding the Anthropic SDK to the ``ClaudeClient`` seam."""
-
     def __init__(
         self,
         *,
@@ -119,7 +118,25 @@ class AnthropicClaudeClient:
         return "".join(parts)
 
 
+def build_anthropic_claude_client(
+    *, api_key: str, config: ClaudeAdapterConfig | None = None
+) -> AnthropicClaudeClient:
+    """Build the Anthropic-backed Claude client from an API key.
+
+    Constructs the Anthropic SDK client (no network at construction time) and
+    wraps it in :class:`AnthropicClaudeClient`. The SDK is imported lazily so
+    importing this module never requires the ``anthropic`` package to be present.
+    """
+
+    import anthropic
+
+    return AnthropicClaudeClient(
+        client=anthropic.Anthropic(api_key=api_key), config=config
+    )
+
+
 __all__ = [
     "ClaudeAdapterConfig",
     "AnthropicClaudeClient",
+    "build_anthropic_claude_client",
 ]

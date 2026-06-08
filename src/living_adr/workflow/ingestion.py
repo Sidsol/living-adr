@@ -238,6 +238,8 @@ class IngestionPipeline:
             status_code=202,
             outcome="accepted",
             delivery_id=delivery_id,
+            scm_event=envelope.event,
+            evidence_refs=(envelope.normalized_pr_key,),
         )
 
     def _delivery_from_result(
