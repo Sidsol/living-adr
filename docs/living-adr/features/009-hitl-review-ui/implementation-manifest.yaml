@@ -1,0 +1,155 @@
+feature_id: '009'
+feature_name: hitl-review-ui
+project: LivingADR
+feature_folder: 'crispy-docs\projects\004-living-adr\features\009-hitl-review-ui'
+ready: true
+status: ready
+slice_count: 6
+task_count: 18
+depends_on:
+  - feature_id: '008'
+    name: claude-adr-drafting-capability
+    consumes:
+      - provisional ADRDraft content/hash/citations/model metadata
+      - provisional-rationale label
+    boundary: does not generate drafts or call Claude
+  - feature_id: '015'
+    name: workflow-orchestration-checkpointing
+    consumes:
+      - ReviewRequestPayload
+      - ReviewResumeCommand
+      - pending LangGraph HITL checkpoint/thread identity
+    boundary: does not redefine graph topology, checkpointing, replay, or routing
+blocked_by: []
+autopilot_assumptions:
+  - local single-user UI token protects all review routes
+  - signed per-review nonce protects state-changing form posts
+  - reviewer id comes from PoC configuration until multi-user identity exists
+  - allowed actions are approve, approve_after_edit, reject, and defer
+  - edited drafts require Title, Status, Context, Decision, and Consequences sections
+  - feature 010 remains responsible for ApprovedReviewDecision minting and durable audit
+architecture_bindings:
+  service_boundaries: '..\..\architecture.md#service-boundaries'
+  data_model: '..\..\architecture.md#data-model'
+  tech_stack: '..\..\architecture.md#tech-stack'
+  cross_cutting: '..\..\architecture.md#cross-cutting'
+  anti_patterns: '..\..\architecture.md#anti-patterns'
+  deployment: '..\..\architecture.md#deployment'
+  repositories: '..\..\architecture.md#repositories'
+affected_repositories:
+  - repo: living-adr
+    impact: workflow-service HITL package, routes, templates, static CSS, tests
+    confidence: high
+boundaries:
+  excluded:
+    - ApprovedReviewDecision minting
+    - ApprovalEvent/audit durability
+    - ArchitectureGraphStore writes
+    - ApprovalBoundMutationService calls
+    - Claude/Anthropic calls
+    - GitHub publication
+    - MCP serving
+    - workflow graph/checkpointer ownership
+  downstream_owner:
+    approval_capability_and_audit: '010'
+    publish_back: '011'
+validation:
+  expected_test_command: 'uv run pytest'
+  expected_lint_command: 'uv run ruff check'
+  no_new_tooling: true
+slices:
+  - id: SL-001
+    name: pending-review-gateway-view-model
+    tasks: [T-001, T-002, T-003]
+    depends_on: []
+    independently_testable: true
+  - id: SL-002
+    name: accessible-draft-evidence-page
+    tasks: [T-004, T-005, T-006]
+    depends_on: [SL-001]
+    independently_testable: true
+  - id: SL-003
+    name: approve-reject-resume-actions
+    tasks: [T-007, T-008, T-009]
+    depends_on: [SL-001, SL-002]
+    independently_testable: true
+  - id: SL-004
+    name: edit-approve-after-edit-flow
+    tasks: [T-010, T-011, T-012]
+    depends_on: [SL-003]
+    independently_testable: true
+  - id: SL-005
+    name: defer-status-error-states
+    tasks: [T-013, T-014, T-015]
+    depends_on: [SL-003]
+    independently_testable: true
+  - id: SL-006
+    name: accessibility-telemetry-boundary-hardening
+    tasks: [T-016, T-017, T-018]
+    depends_on: [SL-002, SL-004, SL-005]
+    independently_testable: true
+tasks:
+  - id: T-001
+    slice: SL-001
+    title: Defining review view models
+  - id: T-002
+    slice: SL-001
+    title: Creating review workflow gateway
+  - id: T-003
+    slice: SL-001
+    title: Mapping pending payload to page model
+  - id: T-004
+    slice: SL-002
+    title: Adding review GET route
+  - id: T-005
+    slice: SL-002
+    title: Rendering draft evidence template
+  - id: T-006
+    slice: SL-002
+    title: Styling accessible review states
+  - id: T-007
+    slice: SL-003
+    title: Protecting review forms
+  - id: T-008
+    slice: SL-003
+    title: Submitting approve command
+  - id: T-009
+    slice: SL-003
+    title: Submitting reject command
+  - id: T-010
+    slice: SL-004
+    title: Validating edited draft content
+  - id: T-011
+    slice: SL-004
+    title: Hashing edited draft content
+  - id: T-012
+    slice: SL-004
+    title: Submitting approve-after-edit command
+  - id: T-013
+    slice: SL-005
+    title: Submitting defer command
+  - id: T-014
+    slice: SL-005
+    title: Rendering status pages
+  - id: T-015
+    slice: SL-005
+    title: Handling missing unauthorized states
+  - id: T-016
+    slice: SL-006
+    title: Testing accessibility quality gates
+  - id: T-017
+    slice: SL-006
+    title: Emitting metadata-only observability
+  - id: T-018
+    slice: SL-006
+    title: Enforcing capability and mutation boundary
+quality_gates:
+  - all eight planning artifacts exist
+  - manifest YAML is valid
+  - ready is true
+  - slice count is consistent across artifacts
+  - task ids are unique
+  - accessibility requirements are explicit
+  - feature 008 draft contract is consumed
+  - feature 015 HITL interrupt/resume seam is consumed
+  - feature 010 approval minting boundary is preserved

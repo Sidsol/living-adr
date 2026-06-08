@@ -1,0 +1,93 @@
+feature:
+  id: "004"
+  name: dependency-change-detection
+  project: LivingADR
+  theme: TH-02
+  folder: "C:\\repos\\crispy-docs\\projects\\004-living-adr\\features\\004-dependency-change-detection"
+  depends_on: ["003"]
+  auto_split_from: structural-change-detection
+  ready: true
+  ready_reason: "All feature-level CRISPY planning artifacts are present, internally consistent, and scoped to planning only."
+
+artifacts:
+  spec: spec.md
+  research: research.md
+  intent: intent.md
+  outline: outline.md
+  plan: plan.md
+  tasks: tasks.md
+  checklist: checklist.md
+
+contracts:
+  upstream:
+    - feature: "003"
+      provides:
+        - SCMEvent
+        - CandidateEvidence
+        - SCMProvider fetch handles
+        - provider_delivery_id
+        - normalized_pr_key
+  produced:
+    - StructuralChange
+    - ChangeEvidence
+    - DependencyClassificationResult
+    - no_adr_needed_outcome
+  downstream:
+    - feature: "008"
+      consumes:
+        - StructuralChange(change_type="dependency")
+        - ChangeEvidence
+    - feature: "015"
+      invokes:
+        - DependencyChangeProducer
+
+slices:
+  - id: S-001
+    name: Structural-change contract foundation
+    depends_on: []
+    parallelizable: false
+    automation: HITL
+    tasks: [TASK-001, TASK-002, TASK-003]
+    checkpoint_criteria_count: 3
+  - id: S-002
+    name: Dependency evidence recognition
+    depends_on: [S-001]
+    parallelizable: false
+    automation: AFK
+    tasks: [TASK-004, TASK-005]
+    checkpoint_criteria_count: 3
+  - id: S-003
+    name: Draft-eligible direct dependency classification
+    depends_on: [S-002]
+    parallelizable: false
+    automation: HITL
+    tasks: [TASK-006, TASK-007]
+    checkpoint_criteria_count: 3
+  - id: S-004
+    name: Below-threshold no-ADR outcomes
+    depends_on: [S-003]
+    parallelizable: false
+    automation: HITL
+    tasks: [TASK-008, TASK-009]
+    checkpoint_criteria_count: 3
+  - id: S-005
+    name: Producer integration, replay, and telemetry
+    depends_on: [S-004]
+    parallelizable: false
+    automation: HITL
+    tasks: [TASK-010, TASK-011, TASK-012, TASK-013, TASK-014]
+    checkpoint_criteria_count: 3
+
+quality_gates:
+  structural_change_emitted: true
+  immutable_change_evidence_emitted: true
+  confidence_and_source_paths_required: true
+  below_threshold_no_adr_path: true
+  deterministic_testable_classification: true
+  raw_diff_observability_export: false
+  production_code_created: false
+
+validation:
+  self_reviewed: true
+  docs_only: true
+  files_outside_feature_folder_modified: false

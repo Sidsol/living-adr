@@ -1,0 +1,185 @@
+feature_id: '012'
+feature_name: mcp-context-server
+project: LivingADR
+feature_folder: 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server'
+status: planned
+ready: true
+ready_reason: 'Autopilot resolved all blocking questions with documented defaults: stdio-only PoC, read-only ArchitectureContextQuery access, feature 002 config/observability binding, bounded inputs, and metadata-only telemetry.'
+priority: P1
+theme: TH-05
+depends_on: ['007', '002']
+affected_repositories:
+  - repo: living-adr
+    path: 'C:\repos\living-adr'
+    confidence: high
+contract_bindings:
+  feature_007_query_interface: 'Use ArchitectureContextQuery only; do not bypass or redefine the property-graph read port.'
+  feature_002_config: 'Use RepositoryIdentity, RepositoryConfig, LivingADRConfig, startup diagnostics, and Observability port from feature 002.'
+  read_only_boundary: 'No writes, mutations, approvals, publish-back, SCM fetches, Claude calls, graph migrations, or config changes.'
+architecture_anchors:
+  - '..\..\architecture.md#tech-stack'
+  - '..\..\architecture.md#service-boundaries'
+  - '..\..\architecture.md#data-model'
+  - '..\..\architecture.md#cross-cutting'
+  - '..\..\architecture.md#anti-patterns'
+  - '..\..\architecture.md#deployment'
+  - '..\..\architecture.md#repositories'
+defaults:
+  transport: stdio
+  query_limit_default: 5
+  query_limit_max: 10
+  question_length_max: 2000
+  observability: metadata-only via feature 002 Observability
+  repository_selection: 'Configured RepositoryIdentity; single configured repository may be defaulted only without a separate single-repo code path.'
+slice_count: 6
+task_count: 18
+slices:
+  - id: '012-s01'
+    name: mcp-app-bootstrap-and-stdio-startup
+    order: 1
+    independently_testable: true
+    description: 'Create MCP app bootstrap, feature 002 config startup, and stdio entrypoint.'
+    tasks:
+      - id: '012-s01-t01'
+        title: Create MCP app package skeleton
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\__init__.py'
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\app.py'
+        depends_on: []
+      - id: '012-s01-t02'
+        title: Wire startup config loading and stdio entrypoint
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\startup.py'
+          - 'C:\repos\living-adr\pyproject.toml'
+        depends_on: ['012-s01-t01']
+      - id: '012-s01-t03'
+        title: Test startup success and config failure
+        paths:
+          - 'C:\repos\living-adr\tests\apps\mcp_context_server\test_startup.py'
+        depends_on: ['012-s01-t02']
+  - id: '012-s02'
+    name: read-only-query-wiring-and-safety-guardrails
+    order: 2
+    independently_testable: true
+    description: 'Inject only ArchitectureContextQuery/config/observability and validate shared request fields.'
+    tasks:
+      - id: '012-s02-t01'
+        title: Define read-only dependency container
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\dependencies.py'
+        depends_on: ['012-s01-t03']
+      - id: '012-s02-t02'
+        title: Add shared request validation and repository resolution
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\validation.py'
+        depends_on: ['012-s02-t01']
+      - id: '012-s02-t03'
+        title: Prove forbidden write dependencies are absent
+        paths:
+          - 'C:\repos\living-adr\tests\apps\mcp_context_server\test_read_only_wiring.py'
+        depends_on: ['012-s02-t02']
+  - id: '012-s03'
+    name: list-adrs-mcp-surface
+    order: 3
+    independently_testable: true
+    description: 'Expose list_adrs over MCP through ArchitectureContextQuery.list_adrs.'
+    tasks:
+      - id: '012-s03-t01'
+        title: Implement ADRRef serialization
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\serializers.py'
+        depends_on: ['012-s02-t03']
+      - id: '012-s03-t02'
+        title: Register list_adrs tool
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\tools.py'
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\app.py'
+        depends_on: ['012-s03-t01']
+      - id: '012-s03-t03'
+        title: Test list_adrs status and scope behavior
+        paths:
+          - 'C:\repos\living-adr\tests\apps\mcp_context_server\test_list_adrs.py'
+        depends_on: ['012-s03-t02']
+  - id: '012-s04'
+    name: fetch-adr-mcp-surface
+    order: 4
+    independently_testable: true
+    description: 'Expose fetch_adr over MCP through ArchitectureContextQuery.fetch_adr.'
+    tasks:
+      - id: '012-s04-t01'
+        title: Implement ProvenancedADR serialization
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\serializers.py'
+        depends_on: ['012-s03-t03']
+      - id: '012-s04-t02'
+        title: Register fetch_adr tool with snapshot pass-through
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\tools.py'
+        depends_on: ['012-s04-t01']
+      - id: '012-s04-t03'
+        title: Test fetch_adr found missing and safe errors
+        paths:
+          - 'C:\repos\living-adr\tests\apps\mcp_context_server\test_fetch_adr.py'
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\errors.py'
+        depends_on: ['012-s04-t02']
+  - id: '012-s05'
+    name: answer-why-mcp-surface
+    order: 5
+    independently_testable: true
+    description: 'Expose answer_why over MCP through ArchitectureContextQuery.answer_why with citations and bounded inputs.'
+    tasks:
+      - id: '012-s05-t01'
+        title: Implement WhyAnswer serialization
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\serializers.py'
+        depends_on: ['012-s04-t03']
+      - id: '012-s05-t02'
+        title: Register answer_why tool with bounded inputs
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\tools.py'
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\validation.py'
+        depends_on: ['012-s05-t01']
+      - id: '012-s05-t03'
+        title: Test answer_why citations no-context and limits
+        paths:
+          - 'C:\repos\living-adr\tests\apps\mcp_context_server\test_answer_why.py'
+        depends_on: ['012-s05-t02']
+  - id: '012-s06'
+    name: observability-docs-and-conformance-hardening
+    order: 6
+    independently_testable: true
+    description: 'Add metadata-only observability, local MCP docs, and read-only contract regression tests.'
+    tasks:
+      - id: '012-s06-t01'
+        title: Add metadata-only observability wrapper
+        paths:
+          - 'C:\repos\living-adr\src\living_adr\apps\mcp_context_server\observability.py'
+        depends_on: ['012-s05-t03']
+      - id: '012-s06-t02'
+        title: Document local MCP host configuration
+        paths:
+          - 'C:\repos\living-adr\docs\mcp-context-server.md'
+        depends_on: ['012-s06-t01']
+      - id: '012-s06-t03'
+        title: Add conformance regression tests for read-only MCP behavior
+        paths:
+          - 'C:\repos\living-adr\tests\apps\mcp_context_server\test_observability_and_contract.py'
+        depends_on: ['012-s06-t02']
+validation:
+  commands_after_implementation:
+    - 'uv run pytest'
+    - 'uv run ruff check'
+  planning_self_review:
+    required_files:
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\spec.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\research.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\intent.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\outline.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\plan.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\tasks.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\checklist.md'
+      - 'crispy-docs\projects\004-living-adr\features\012-mcp-context-server\implementation-manifest.yaml'
+    no_production_code_written: true
+    read_only_mcp: true
+    uses_feature_007_query_interface: true
+    uses_feature_002_observability_port: true

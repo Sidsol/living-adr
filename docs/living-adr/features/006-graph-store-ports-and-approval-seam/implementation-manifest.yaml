@@ -1,0 +1,191 @@
+id: "006"
+name: graph-store-ports-and-approval-seam
+project: LivingADR
+folder: crispy-docs\projects\004-living-adr\features\006-graph-store-ports-and-approval-seam
+ready: true
+artifact_set:
+  - spec.md
+  - research.md
+  - intent.md
+  - outline.md
+  - plan.md
+  - tasks.md
+  - checklist.md
+  - implementation-manifest.yaml
+sources:
+  architecture: ..\..\architecture.md
+  domain_research: ..\..\domain-research.md
+  vision: ..\..\vision.md
+  feature_map: ..\..\feature-map.md
+  roadmap: ..\..\roadmap.md
+  dependency_feature_002_intent: ..\002-tracked-repository-configuration\intent.md
+architecture_anchors:
+  - ..\..\architecture.md#service-boundaries
+  - ..\..\architecture.md#data-model
+  - ..\..\architecture.md#cross-cutting
+  - ..\..\architecture.md#anti-patterns
+theme_links:
+  primary:
+    - TH-04
+  enables:
+    - TH-03
+    - TH-05
+    - TH-06
+success_metric_links:
+  direct:
+    - SM-05
+  indirect:
+    - SM-01
+    - SM-03
+    - SM-04
+feature_dependencies:
+  - "002"
+downstream_features:
+  - "007"
+  - "008"
+  - "010"
+  - "011"
+  - "012"
+  - "015"
+failure_modes:
+  - FM-06
+  - FM-08
+  - FM-10
+  - FM-13
+  - FM-15
+  - FM-16
+  - FM-21
+  - FM-23
+scope:
+  in:
+    - ArchitectureGraphStore write port
+    - ArchitectureContextQuery read port
+    - core graph value objects and query DTOs
+    - ADRRecord and ADRRecordRepository expectations
+    - ApprovedReviewDecision contract shape required by mutation boundary
+    - ApprovalBoundMutationService pre-adapter validation contract
+    - adapter conformance suite and in-memory fake adapter
+    - source-of-truth hierarchy documentation and tests
+    - import-boundary checks preventing concrete persistence leaks
+  out:
+    - LlamaIndexPropertyGraphAdapter implementation
+    - durable approval capability minting and one-shot persistence
+    - LangGraph workflow orchestration
+    - MCP server tool implementation
+    - ADR publish-back to GitHub
+    - production graph database migrations
+slices:
+  - id: 1
+    name: Core graph value objects
+    stories: [US-1]
+    depends_on: []
+    parallelizable: false
+    automation: HITL
+    automation_reason: Establishes stable graph vocabulary and repository-scope semantics consumed by every later slice.
+    task_ids: [TASK-001, TASK-002, TASK-003]
+    checkpoint_criteria:
+      - Every graph value crossing a port carries or references RepositoryIdentity where needed.
+      - Unsupported relationship labels fail deterministically.
+      - Query result DTOs expose ADR citations/provenance, not backend objects.
+  - id: 2
+    name: ADR record repository and source hierarchy
+    stories: [US-2, US-6]
+    depends_on: [1]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Defines authoritative-rationale semantics and must be reviewed against source-of-truth discipline.
+    task_ids: [TASK-004, TASK-005, TASK-006]
+    checkpoint_criteria:
+      - ADRRecord cannot be valid without repository identity and approved decision linkage.
+      - Repository contract states ADR records are canonical approved rationale.
+      - Projection conflict behavior is explicit; rebuild/flag, never silent overwrite.
+  - id: 3
+    name: Architecture graph read/write ports
+    stories: [US-3, US-6]
+    depends_on: [1, 2]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Port signatures become cross-feature contracts for workflow, MCP, and adapters.
+    task_ids: [TASK-007, TASK-008, TASK-009]
+    checkpoint_criteria:
+      - Every write method requires RepositoryIdentity and ApprovedReviewDecision.
+      - Every read method requires RepositoryIdentity and exposes no write capability.
+      - Port modules import no LlamaIndex, LangSmith, FastAPI, MCP, or DB-specific types.
+  - id: 4
+    name: Approval-bound mutation service
+    stories: [US-4]
+    depends_on: [2, 3]
+    parallelizable: false
+    automation: HITL
+    automation_reason: Safety-critical boundary preventing unapproved authoritative mutations.
+    task_ids: [TASK-010, TASK-011, TASK-012, TASK-013]
+    checkpoint_criteria:
+      - None, rejected, repository-mismatched, hash-mismatched, and target-mismatched decisions raise before adapter calls.
+      - Valid approved decisions delegate exactly once to the write port.
+      - Observability calls are metadata-only and use feature 002 Observability seam.
+  - id: 5
+    name: Adapter conformance suite
+    stories: [US-5]
+    depends_on: [3, 4]
+    parallelizable: true
+    automation: HITL
+    automation_reason: Future adapters must pass executable contract checks before becoming trusted persistence.
+    task_ids: [TASK-014, TASK-015, TASK-016, TASK-017]
+    checkpoint_criteria:
+      - Suite fails adapters that ignore repository scoping.
+      - Suite fails adapters that allow mutation without approval.
+      - Suite fails adapters that return concrete persistence objects through domain ports.
+      - Future adapter opt-in instructions are included in test helper docstrings or README comments.
+  - id: 6
+    name: Integration exports and verification
+    stories: [US-6]
+    depends_on: [1, 2, 3, 4, 5]
+    parallelizable: false
+    automation: AFK
+    automation_reason: Additive import/export and verification tasks once contracts are established.
+    task_ids: [TASK-018, TASK-019, TASK-020, TASK-021, TASK-022]
+    checkpoint_criteria:
+      - Downstream modules can import graph/ADR/approval contracts from stable package paths.
+      - Forbidden concrete dependencies do not appear in core graph/approval modules.
+      - Existing pytest and Ruff commands pass.
+task_summary:
+  total: 22
+  p1: 22
+  p2: 0
+  p3: 0
+  verification_tasks:
+    - TASK-020
+    - TASK-021
+    - TASK-022
+implementation_task_ids:
+  - TASK-001
+  - TASK-002
+  - TASK-003
+  - TASK-004
+  - TASK-005
+  - TASK-006
+  - TASK-007
+  - TASK-008
+  - TASK-009
+  - TASK-010
+  - TASK-011
+  - TASK-012
+  - TASK-013
+  - TASK-014
+  - TASK-015
+  - TASK-016
+  - TASK-017
+  - TASK-018
+  - TASK-019
+  - TASK-020
+  - TASK-021
+  - TASK-022
+validation:
+  self_reviewed: true
+  artifacts_consistent: true
+  no_files_outside_feature_folder_intended: true
+  ready_rationale: All required planning artifacts exist, slice/task counts align, architecture anchors are referenced, and feature 007/010/012/015 boundaries are explicit.
+  notes:
+    - Slice count matches feature-map estimate of approximately 6 slices.
+    - Feature 006 defines contracts only; LlamaIndex adapter remains feature 007.
+    - Durable approval capability persistence remains feature 010, while this feature enforces pre-adapter approval validation.

@@ -1,0 +1,80 @@
+feature_id: "015"
+feature_name: workflow-orchestration-checkpointing
+theme: TH-03
+folder: "C:\\repos\\crispy-docs\\projects\\004-living-adr\\features\\015-workflow-orchestration-checkpointing"
+status: planned
+ready: true
+slice_count: 6
+depends_on:
+  - "003"
+  - "006"
+artifacts:
+  spec: spec.md
+  research: research.md
+  intent: intent.md
+  outline: outline.md
+  plan: plan.md
+  tasks: tasks.md
+  checklist: checklist.md
+implementation_scope:
+  production_code_allowed: false
+  planning_artifacts_only: true
+selected_approach: "LangGraph graph with SQLite checkpointer and typed stub-node seams"
+architecture_anchors:
+  - "..\\..\\architecture.md#tech-stack"
+  - "..\\..\\architecture.md#service-boundaries"
+  - "..\\..\\architecture.md#data-model"
+  - "..\\..\\architecture.md#cross-cutting"
+  - "..\\..\\architecture.md#anti-patterns"
+slices:
+  - id: 1
+    name: State and node seam contracts
+    automation: HITL
+    depends_on: []
+    parallelizable: false
+    ready: true
+  - id: 2
+    name: SQLite checkpointer factory
+    automation: HITL
+    depends_on: [1]
+    parallelizable: false
+    ready: true
+  - id: 3
+    name: Stub graph assembly
+    automation: HITL
+    depends_on: [1, 2]
+    parallelizable: false
+    ready: true
+  - id: 4
+    name: HITL interrupt/resume service
+    automation: HITL
+    depends_on: [3]
+    parallelizable: false
+    ready: true
+  - id: 5
+    name: Mutation handoff boundary
+    automation: HITL
+    depends_on: [4]
+    parallelizable: false
+    ready: true
+  - id: 6
+    name: Replay/recovery integration
+    automation: HITL
+    depends_on: [3, 4, 5]
+    parallelizable: false
+    ready: true
+handoff_contracts:
+  feature_003: "Consumes normalized SCMEvent/evidence/replay contracts; no raw GitHub payloads in graph state."
+  feature_008: "Implements ADRDraftNode behind documented draft seam."
+  feature_009: "Renders ReviewRequestPayload and submits ReviewResumeCommand; does not own graph topology/checkpointing."
+  feature_010: "Mints durable ApprovedReviewDecision/audit state; orchestration only consumes capability and routes to mutation handoff."
+  feature_006: "Provides ApprovalBoundMutationService; graph writes must flow only through this service."
+gates:
+  graph_assembled_with_stub_nodes: true
+  checkpointer_persists_inflight_state: true
+  interrupt_resume_verified_in_plan: true
+  replay_recovery_testable: true
+  single_writer_wal_preserved: true
+  node_seams_documented: true
+open_questions:
+  - "Verify exact LangGraph SQLite saver import/package during implementation; add compatible package only if required."

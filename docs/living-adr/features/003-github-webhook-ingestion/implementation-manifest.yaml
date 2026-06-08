@@ -1,0 +1,157 @@
+feature:
+  id: "003"
+  name: github-webhook-ingestion
+  project: "004-living-adr"
+  theme: "TH-01"
+  folder: "C:\\repos\\crispy-docs\\projects\\004-living-adr\\features\\003-github-webhook-ingestion"
+
+status:
+  ready: true
+  reason: "All requested feature-level CRISPY planning artifacts are present and internally consistent for implementation handoff."
+  generated_at: "planning-time"
+
+inputs:
+  project_artifacts:
+    - "..\\..\\architecture.md"
+    - "..\\..\\domain-research.md"
+    - "..\\..\\vision.md"
+    - "..\\..\\feature-map.md"
+    - "..\\..\\roadmap.md"
+  dependency_features:
+    - id: "002"
+      name: tracked-repository-configuration
+      consumed_contracts:
+        - RepositoryConfig
+        - RepositoryIdentity
+        - Observability
+        - NoOpObservability
+
+artifacts:
+  spec: spec.md
+  research: research.md
+  intent: intent.md
+  outline: outline.md
+  plan: plan.md
+  tasks: tasks.md
+  checklist: checklist.md
+  manifest: implementation-manifest.yaml
+
+scope:
+  in:
+    - GitHub App webhook entry path for merged PRs
+    - HMAC verification before JSON parsing
+    - Delivery-id idempotency
+    - Normalized SCMEvent creation
+    - SCMProvider/GitHubProvider minimal PR and diff fetch handles
+    - Candidate evidence stream for structural-change classifiers
+    - Replay and dead-letter state
+    - Observability through inherited port
+    - Azure DevOps future adapter seam preservation
+  out:
+    - Azure DevOps implementation
+    - Structural-change classifier logic
+    - ADR drafting or Claude calls
+    - HITL approval UI
+    - Graph mutation
+    - MCP context query implementation
+    - Full LangGraph checkpointing
+    - Broad repository history mining/backfill
+
+architecture_anchors:
+  - "..\\..\\architecture.md#service-boundaries"
+  - "..\\..\\architecture.md#data-model"
+  - "..\\..\\architecture.md#cross-cutting"
+  - "..\\..\\architecture.md#anti-patterns"
+
+risks_addressed:
+  - id: FM-17
+    name: webhook replay complexity
+    handled_by: [2, 5]
+  - id: FM-18
+    name: rate-limit starvation
+    handled_by: [4]
+  - id: FM-24
+    name: cross-SCM abstraction leaks
+    handled_by: [3]
+  - id: FM-14
+    name: untrusted PR/repo input
+    handled_by: [1, 4, 6]
+  - id: FM-21
+    name: trace/context leakage
+    handled_by: [6]
+
+slices:
+  - id: 1
+    name: Verify GitHub webhook requests
+    stories: [US-1]
+    depends_on: []
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Security-critical raw-body HMAC boundary must be reviewed carefully."
+    tasks: [TASK-001, TASK-002, TASK-003, TASK-004]
+    checkpoint_criteria_count: 4
+  - id: 2
+    name: Filter configured merged PR deliveries idempotently
+    stories: [US-2]
+    depends_on: [1]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Defines durable idempotency and repository acceptance semantics."
+    tasks: [TASK-005, TASK-006, TASK-007, TASK-008, TASK-009, TASK-010]
+    checkpoint_criteria_count: 4
+  - id: 3
+    name: Normalize SCMEvent and provider seam
+    stories: [US-3]
+    depends_on: [2]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Establishes cross-feature contracts and Azure DevOps seam."
+    tasks: [TASK-011, TASK-012, TASK-013, TASK-014, TASK-015]
+    checkpoint_criteria_count: 4
+  - id: 4
+    name: Fetch minimal PR/diff candidate evidence
+    stories: [US-4]
+    depends_on: [3]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "External API/rate-limit boundary and evidence/rationale separation need review."
+    tasks: [TASK-016, TASK-017, TASK-018, TASK-019, TASK-020]
+    checkpoint_criteria_count: 4
+  - id: 5
+    name: Replay and dead-letter recovery
+    stories: [US-5]
+    depends_on: [4]
+    parallelizable: false
+    automation: HITL
+    automation_reason: "Operational recovery can reprocess events and must preserve idempotency."
+    tasks: [TASK-021, TASK-022, TASK-023, TASK-024]
+    checkpoint_criteria_count: 4
+  - id: 6
+    name: Observability and integration verification
+    stories: [US-1, US-5]
+    depends_on: [5]
+    parallelizable: false
+    automation: AFK
+    automation_reason: "Additive metadata-only instrumentation and verification once behavior exists."
+    tasks: [TASK-025, TASK-026, TASK-027, TASK-028, TASK-029, TASK-030]
+    checkpoint_criteria_count: 4
+
+quality_gates:
+  hmac_verified: true
+  idempotency_on_delivery_id: true
+  scm_event_normalized: true
+  replay_dead_letter_handled: true
+  azure_devops_seam_preserved: true
+  observability_port_used: true
+  raw_payload_trace_leakage_allowed: false
+  production_code_modified: false
+
+verification:
+  planning_self_review:
+    - "All requested artifacts exist in the feature folder."
+    - "Slice IDs and TASK IDs are consistent across outline, plan, tasks, and manifest."
+    - "Feature 002 dependency contracts are named consistently."
+    - "Architecture anchors are referenced in intent and checklist."
+  implementation_commands:
+    - "uv run pytest"
+    - "uv run ruff check"

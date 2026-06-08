@@ -1,0 +1,126 @@
+feature:
+  id: "008"
+  name: claude-adr-drafting-capability
+  project: LivingADR
+  folder: 'C:\repos\crispy-docs\projects\004-living-adr\features\008-claude-adr-drafting-capability'
+  depends_on: ["004", "007", "015"]
+  ready: true
+  ready_reason: "All blocking questions were resolved with documented autopilot defaults; all CRISPY planning artifacts are present and internally consistent."
+
+artifacts:
+  spec: spec.md
+  research: research.md
+  intent: intent.md
+  outline: outline.md
+  plan: plan.md
+  tasks: tasks.md
+  checklist: checklist.md
+
+scope:
+  planning_only: true
+  production_code_written: false
+  authoritative_mutations_allowed: false
+  approval_persistence_audit_publish_in_scope: false
+
+selected_approach: "Domain-first Feature 015 draft node with ClaudeClient adapter, policy gate, graph query context, token budget, parser, and fake client."
+
+architecture_anchors:
+  - '..\..\architecture.md#service-boundaries'
+  - '..\..\architecture.md#data-model'
+  - '..\..\architecture.md#tech-stack'
+  - '..\..\architecture.md#cross-cutting'
+  - '..\..\architecture.md#anti-patterns'
+  - '..\..\architecture.md#deployment'
+  - '..\..\architecture.md#repositories'
+
+contracts:
+  consumes:
+    - feature: "004"
+      names: [StructuralChange, ChangeEvidence]
+      mode: "exact byte-for-byte contract consumption; no redefinition"
+    - feature: "007"
+      names: [ArchitectureContextQuery]
+      mode: "query-port-only graph context retrieval"
+    - feature: "015"
+      names: [ADRDraftNode, WorkflowState]
+      mode: "implement draft-node seam only; do not redefine orchestration backbone"
+  produces:
+    - ClaudeClient
+    - FakeClaudeClient
+    - ADRDraft
+    - DraftADRRecordCandidate
+    - PromptPackage
+    - TokenBudgetResult
+    - DraftingOutcome
+    - metadata_only_drafting_events
+
+slices:
+  - id: S-001
+    name: Draft and Claude client contracts
+    depends_on: []
+    tasks: [TASK-001, TASK-002, TASK-003, TASK-004]
+    automation: HITL
+    ready: true
+  - id: S-002
+    name: LLM policy enforcement
+    depends_on: [S-001]
+    tasks: [TASK-005, TASK-006]
+    automation: HITL
+    ready: true
+  - id: S-003
+    name: Graph context packaging
+    depends_on: [S-001]
+    tasks: [TASK-007, TASK-008]
+    automation: HITL
+    ready: true
+  - id: S-004
+    name: Prompt assembly and token budget
+    depends_on: [S-002, S-003]
+    tasks: [TASK-009, TASK-010, TASK-011, TASK-012]
+    automation: HITL
+    ready: true
+  - id: S-005
+    name: Claude adapter and output parser
+    depends_on: [S-004]
+    tasks: [TASK-013, TASK-014, TASK-015, TASK-016]
+    automation: HITL
+    ready: true
+  - id: S-006
+    name: Feature 015 draft node integration
+    depends_on: [S-005]
+    tasks: [TASK-017, TASK-018, TASK-019, TASK-020]
+    automation: HITL
+    ready: true
+  - id: S-007
+    name: Observability and blocked/error outcomes
+    depends_on: [S-006]
+    tasks: [TASK-021, TASK-022, TASK-023]
+    automation: HITL
+    ready: true
+
+slice_count: 7
+task_count: 23
+
+autopilot_defaults:
+  prompt_budget_tokens: 8000
+  default_model_id: "claude-sonnet-4-6"
+  denied_policy_behavior: "return llm_policy_denied and do not call Claude"
+  empty_context_behavior: "continue with explicit no-approved-context marker and provisional rationale label"
+  missing_required_evidence_behavior: "block drafting; do not fetch SCM directly"
+  normal_tests_call_real_api: false
+
+quality_gates:
+  structural_change_contract_redefined: false
+  change_evidence_contract_redefined: false
+  architecture_context_query_only: true
+  feature_015_orchestration_redefined: false
+  llm_policy_gate_before_egress: true
+  fake_client_test_seam: true
+  token_budget_enforced: true
+  metadata_only_observability: true
+  no_authoritative_mutation: true
+  docs_only_planning_run: true
+
+validation:
+  manifest_yaml_valid: true
+  ready: true
